@@ -142,7 +142,7 @@ func PingTest() string {
 		if i > 0 && i%3 == 0 {
 			result += "\n"
 		}
-		if server.Avg.String() == "0s" {
+		if server.Avg == 0 {
 			avgStr = "N/A"
 		} else {
 			avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
