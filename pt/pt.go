@@ -30,8 +30,8 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	}
 	pinger.Count = 3
 	pinger.Size = 24
-	pinger.Interval = time.Second
-	pinger.Timeout = time.Second * 3
+	pinger.Interval = 500*time.Millisecond
+	pinger.Timeout = 3*time.Second
 	pinger.TTL = 64
 	if runtime.GOOS != "windows" {
 		pinger.SetPrivileged(false)

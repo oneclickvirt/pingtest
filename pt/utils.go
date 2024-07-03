@@ -19,7 +19,7 @@ func getData(endpoint string) string {
 	client.SetTimeout(6 * time.Second)
 	client.R().
 		SetRetryCount(2).
-		SetRetryBackoffInterval(1*time.Second, 5*time.Second).
+		SetRetryBackoffInterval(1*time.Second, 3*time.Second).
 		SetRetryFixedInterval(2 * time.Second)
 	if model.EnableLoger {
 		InitLogger()

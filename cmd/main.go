@@ -17,11 +17,9 @@ func main() {
 	}()
 	fmt.Println("项目地址:", Blue("https://github.com/oneclickvirt/pingtest"))
 	var showVersion, help bool
-	var language string
 	pingtestFlag := flag.NewFlagSet("cputest", flag.ContinueOnError)
 	pingtestFlag.BoolVar(&help, "h", false, "Show help information")
 	pingtestFlag.BoolVar(&showVersion, "v", false, "Show version")
-	pingtestFlag.StringVar(&language, "l", "", "Language parameter (en or zh)")
 	pingtestFlag.Parse(os.Args[1:])
 	if help {
 		fmt.Printf("Usage: %s [options]\n", os.Args[0])
