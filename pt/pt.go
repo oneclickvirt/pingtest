@@ -2,7 +2,6 @@ package pt
 
 import (
 	"fmt"
-	"net"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -13,11 +12,9 @@ import (
 	"github.com/mattn/go-runewidth"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
-	"golang.org/x/net/icmp"
-	"golang.org/x/net/ipv4"
 )
 
-const ICMPProtocolICMP = 1
+// const ICMPProtocolICMP = 1
 
 // func pingServerByProbing(server *model.Server, wg *sync.WaitGroup) {
 // 	if model.EnableLoger {
@@ -44,79 +41,79 @@ const ICMPProtocolICMP = 1
 // 	server.Avg = stats.AvgRtt
 // }
 
-func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
-	if model.EnableLoger {
-		InitLogger()
-		defer Logger.Sync()
-	}
-	defer wg.Done()
-	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot listen for ICMP packets: " + err.Error())
-		}
-		return
-	}
-	defer conn.Close()
-	target := server.IP
-	dst, err := net.ResolveIPAddr("ip4", target)
-	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot resolve IP address: " + err.Error())
-		}
-		return
-	}
-	var totalRtt time.Duration
-	pingCount := 3
-	for i := 0; i < pingCount; i++ {
-		msg := icmp.Message{
-			Type: ipv4.ICMPTypeEcho,
-			Code: 0,
-			Body: &icmp.Echo{
-				ID:   i,
-				Seq:  i,
-				Data: []byte("ping"),
-			},
-		}
-		msgBytes, err := msg.Marshal(nil)
-		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot marshal ICMP message: " + err.Error())
-			}
-			return
-		}
-		start := time.Now()
-		_, err = conn.WriteTo(msgBytes, dst)
-		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot send ICMP message: " + err.Error())
-			}
-			return
-		}
-		reply := make([]byte, 1500)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		n, _, err := conn.ReadFrom(reply)
-		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot receive ICMP reply: " + err.Error())
-			}
-			return
-		}
-		duration := time.Since(start)
-		rm, err := icmp.ParseMessage(ICMPProtocolICMP, reply[:n])
-		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot parse ICMP reply: " + err.Error())
-			}
-			return
-		}
-		switch rm.Type {
-		case ipv4.ICMPTypeEchoReply:
-			totalRtt += duration
-		}
-	}
-	server.Avg = totalRtt / time.Duration(float64(pingCount)*float64(time.Millisecond))
-}
+// func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
+// 	if model.EnableLoger {
+// 		InitLogger()
+// 		defer Logger.Sync()
+// 	}
+// 	defer wg.Done()
+// 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
+// 	if err != nil {
+// 		if model.EnableLoger {
+// 			Logger.Info("cannot listen for ICMP packets: " + err.Error())
+// 		}
+// 		return
+// 	}
+// 	defer conn.Close()
+// 	target := server.IP
+// 	dst, err := net.ResolveIPAddr("ip4", target)
+// 	if err != nil {
+// 		if model.EnableLoger {
+// 			Logger.Info("cannot resolve IP address: " + err.Error())
+// 		}
+// 		return
+// 	}
+// 	var totalRtt time.Duration
+// 	pingCount := 3
+// 	for i := 0; i < pingCount; i++ {
+// 		msg := icmp.Message{
+// 			Type: ipv4.ICMPTypeEcho,
+// 			Code: 0,
+// 			Body: &icmp.Echo{
+// 				ID:   i,
+// 				Seq:  i,
+// 				Data: []byte("ping"),
+// 			},
+// 		}
+// 		msgBytes, err := msg.Marshal(nil)
+// 		if err != nil {
+// 			if model.EnableLoger {
+// 				Logger.Info("cannot marshal ICMP message: " + err.Error())
+// 			}
+// 			return
+// 		}
+// 		start := time.Now()
+// 		_, err = conn.WriteTo(msgBytes, dst)
+// 		if err != nil {
+// 			if model.EnableLoger {
+// 				Logger.Info("cannot send ICMP message: " + err.Error())
+// 			}
+// 			return
+// 		}
+// 		reply := make([]byte, 1500)
+// 		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+// 		n, _, err := conn.ReadFrom(reply)
+// 		if err != nil {
+// 			if model.EnableLoger {
+// 				Logger.Info("cannot receive ICMP reply: " + err.Error())
+// 			}
+// 			return
+// 		}
+// 		duration := time.Since(start)
+// 		rm, err := icmp.ParseMessage(ICMPProtocolICMP, reply[:n])
+// 		if err != nil {
+// 			if model.EnableLoger {
+// 				Logger.Info("cannot parse ICMP reply: " + err.Error())
+// 			}
+// 			return
+// 		}
+// 		switch rm.Type {
+// 		case ipv4.ICMPTypeEchoReply:
+// 			totalRtt += duration
+// 		}
+// 	}
+// 	server.Avg = totalRtt / time.Duration(float64(pingCount)*float64(time.Millisecond))
+// }
 
 func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
@@ -131,7 +128,7 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		if model.EnableLoger {
 			Logger.Info("cannot ping: " + err.Error())
 		}
-		pingServerByGolang(server, wg)
+		// pingServerByGolang(server, wg)
 		return
 	}
 	// 解析输出结果
@@ -139,7 +136,7 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		if model.EnableLoger {
 			Logger.Info("ping failed without time=")
 		}
-		pingServerByGolang(server, wg)
+		// pingServerByGolang(server, wg)
 		return
 	}
 	var avgTime float64
@@ -152,20 +149,20 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 				if model.EnableLoger {
 					Logger.Info("cannot parse avgTime: " + err.Error())
 				}
-				pingServerByGolang(server, wg)
+				// pingServerByGolang(server, wg)
 				return
 			}
 		}
 	}
-	if avgTime == 0 {
-		if model.EnableLoger {
-			Logger.Info("avgTime is 0.")
-		}
-		pingServerByGolang(server, wg)
-		return
-	} else {
-		server.Avg = time.Duration(avgTime * float64(time.Millisecond))
-	}
+	// if avgTime == 0 {
+	// 	if model.EnableLoger {
+	// 		Logger.Info("avgTime is 0.")
+	// 	}
+	// 	// pingServerByGolang(server, wg)
+	// 	return
+	// } else {
+	server.Avg = time.Duration(avgTime * float64(time.Millisecond))
+	// }
 }
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
@@ -180,13 +177,13 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		if model.EnableLoger {
 			Logger.Info("cannot ping: " + err.Error())
 		}
-		pingServerByGolang(server, wg)
+		// pingServerByGolang(server, wg)
 		return
 	} else if !strings.Contains(string(output), "Usage") {
 		if model.EnableLoger {
 			Logger.Info("cannot match ping command.")
 		}
-		pingServerByGolang(server, wg)
+		// pingServerByGolang(server, wg)
 		return
 	} else {
 		pingServerByCMD(server, wg)
@@ -238,11 +235,12 @@ func PingTest() string {
 		if i > 0 && i%3 == 0 {
 			result += "\n"
 		}
-		if server.Avg == 0 {
-			avgStr = "N/A"
-		} else {
-			avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
-		}
+		// if server.Avg == 0 {
+		// 	avgStr = "N/A"
+		// } else {
+		// 	avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
+		// }
+		avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
 		name := server.Name
 		nameWidth := runewidth.StringWidth(name)
 		padding := 16 - nameWidth
