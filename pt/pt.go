@@ -1,11 +1,9 @@
 package pt
 
 import (
-	"bufio"
 	"fmt"
 	"net"
 	"os/exec"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -145,14 +143,12 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		pingServerByGolang(server, wg)
 		return
 	}
-	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	var avgTime float64
-	rttRegex := regexp.MustCompile(`time=(\d+\.\d+) ms`)
-	for scanner.Scan() {
-		line := scanner.Text()
-		matches := rttRegex.FindStringSubmatch(line)
-		if len(matches) > 1 {
-			avgTime, err = strconv.ParseFloat(matches[1], 64)
+	lines := strings.Split(string(output), "\n")
+	if len(lines) >= 2 {
+		matches := strings.Split(lines[1], "time=")
+		if len(matches) >= 2 {
+			avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
 			if err != nil {
 				if model.EnableLoger {
 					Logger.Info("cannot parse avgTime: " + err.Error())
@@ -168,13 +164,8 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		}
 		pingServerByGolang(server, wg)
 		return
-	}
-	if err := scanner.Err(); err != nil {
-		if model.EnableLoger {
-			Logger.Info("scanner error: " + err.Error())
-		}
-		pingServerByGolang(server, wg)
-		return
+	} else {
+		server.Avg = time.Duration(avgTime)
 	}
 }
 
