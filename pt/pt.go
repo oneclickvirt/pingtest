@@ -15,37 +15,36 @@ import (
 	"github.com/mattn/go-runewidth"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
-	probing "github.com/prometheus-community/pro-bing"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 )
 
 const ICMPProtocolICMP = 1
 
-func pingServerByProbing(server *model.Server, wg *sync.WaitGroup) {
-	if model.EnableLoger {
-		InitLogger()
-		defer Logger.Sync()
-	}
-	defer wg.Done()
-	target := server.IP
-	pinger, err := probing.NewPinger(target)
-	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot create Pinger: " + err.Error())
-		}
-		return
-	}
-	pinger.Count = 3
-	pinger.Size = 24
-	pinger.Interval = 500 * time.Millisecond
-	pinger.Timeout = 3 * time.Second
-	pinger.TTL = 64
-	pinger.SetPrivileged(true)
-	stats := pinger.Statistics() // 获取ping统计信息
-	fmt.Println(stats.MinRtt, stats.AvgRtt, stats.MaxRtt)
-	server.Avg = stats.AvgRtt
-}
+// func pingServerByProbing(server *model.Server, wg *sync.WaitGroup) {
+// 	if model.EnableLoger {
+// 		InitLogger()
+// 		defer Logger.Sync()
+// 	}
+// 	defer wg.Done()
+// 	target := server.IP
+// 	pinger, err := probing.NewPinger(target)
+// 	if err != nil {
+// 		if model.EnableLoger {
+// 			Logger.Info("cannot create Pinger: " + err.Error())
+// 		}
+// 		return
+// 	}
+// 	pinger.Count = 3
+// 	pinger.Size = 24
+// 	pinger.Interval = 500 * time.Millisecond
+// 	pinger.Timeout = 3 * time.Second
+// 	pinger.TTL = 64
+// 	pinger.SetPrivileged(true)
+// 	stats := pinger.Statistics() // 获取ping统计信息
+// 	// fmt.Println(stats.MinRtt, stats.AvgRtt, stats.MaxRtt)
+// 	server.Avg = stats.AvgRtt
+// }
 
 func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
@@ -53,7 +52,7 @@ func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 		defer Logger.Sync()
 	}
 	defer wg.Done()
-	conn, err := icmp.ListenPacket("ip4:icmp", "")
+	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
 		if model.EnableLoger {
 			Logger.Info("cannot listen for ICMP packets: " + err.Error())
@@ -207,7 +206,8 @@ func PingTest() string {
 		var wg sync.WaitGroup
 		for i := range servers {
 			wg.Add(1)
-			go pingServerByProbing(servers[i], &wg)
+			// go pingServerByProbing(servers[i], &wg)
+			go pingServer(servers[i], &wg)
 		}
 		wg.Wait()
 		sort.Slice(servers, func(i, j int) bool {
