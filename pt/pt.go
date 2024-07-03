@@ -23,7 +23,6 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		defer Logger.Sync()
 	}
 	defer wg.Done()
-
 	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
 		if model.EnableLoger {
@@ -32,7 +31,6 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		return
 	}
 	defer conn.Close()
-
 	target := server.IP
 	dst, err := net.ResolveIPAddr("ip4", target)
 	if err != nil {
@@ -41,7 +39,6 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		}
 		return
 	}
-
 	var totalRtt time.Duration
 	pingCount := 3
 	for i := 0; i < pingCount; i++ {
@@ -70,7 +67,6 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 			}
 			return
 		}
-
 		reply := make([]byte, 1500)
 		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
 		n, _, err := conn.ReadFrom(reply)
@@ -81,7 +77,6 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 			return
 		}
 		duration := time.Since(start)
-
 		rm, err := icmp.ParseMessage(ICMPProtocolICMP, reply[:n])
 		if err != nil {
 			if model.EnableLoger {
@@ -89,13 +84,12 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 			}
 			return
 		}
-
 		switch rm.Type {
 		case ipv4.ICMPTypeEchoReply:
 			totalRtt += duration
 		}
 	}
-
+	fmt.Println(totalRtt.Milliseconds())
 	server.Avg = totalRtt / time.Duration(pingCount)
 }
 
