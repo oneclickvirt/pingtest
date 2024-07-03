@@ -94,13 +94,14 @@ func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 }
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	cmd := exec.Command("sudo", "ping", "-h")
-	output, err := cmd.CombinedOutput()
-	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
-		pingServerByGolang(server, wg)
-	} else {
-		pingServerByCMD(server, wg)
-	}
+	// cmd := exec.Command("sudo", "ping", "-h")
+	// output, err := cmd.CombinedOutput()
+	// if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
+	// 	pingServerByGolang(server, wg)
+	// } else {
+	// 	pingServerByCMD(server, wg)
+	// }
+	pingServerByCMD(server, wg)
 }
 
 func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
