@@ -32,5 +32,5 @@ func main() {
 		return
 	}
 	res := pt.PingTest()
-	fmt.Printf(res)
+	fmt.Println(res)
 }
