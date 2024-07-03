@@ -191,14 +191,14 @@ func PingTest() string {
 
 	var count int
 	for _, server := range allServers {
-		avgStr := fmt.Sprintf("%4d", server.Avg.Milliseconds())
-		if avgStr == "0" {
+		if server.Avg.Milliseconds() == 0 {
 			continue
 		}
 		if count > 0 && count%3 == 0 {
 			result += "\n"
 		}
 		count++
+		avgStr := fmt.Sprintf("%4d", server.Avg.Milliseconds())
 		name := server.Name
 		padding := 16 - runewidth.StringWidth(name)
 		if padding < 0 {
