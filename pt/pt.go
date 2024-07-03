@@ -23,12 +23,11 @@ const (
 	timeout          = 3 * time.Second
 )
 
-func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
+func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
 		InitLogger()
 		defer Logger.Sync()
 	}
-	defer wg.Done()
 
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
@@ -99,18 +98,17 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	cmd := exec.Command("sudo", "ping", "-h")
 	output, err := cmd.CombinedOutput()
 	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
-		pingServerByGolang(server, wg)
+		pingServerByGolang(server)
 	} else {
-		pingServerByCMD(server, wg)
+		pingServerByCMD(server)
 	}
 }
 
-func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
+func pingServerByCMD(server *model.Server) {
 	if model.EnableLoger {
 		InitLogger()
 		defer Logger.Sync()
 	}
-	defer wg.Done()
 
 	cmd := exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	output, err := cmd.CombinedOutput()
