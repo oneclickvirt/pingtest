@@ -198,7 +198,7 @@ func PingTest() string {
 		var wg sync.WaitGroup
 		for i := range servers {
 			wg.Add(1)
-			go pingServerByCMD(servers[i], &wg)
+			go pingServer(servers[i], &wg)
 		}
 		wg.Wait()
 		sort.Slice(servers, func(i, j int) bool {
