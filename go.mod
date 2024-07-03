@@ -4,6 +4,7 @@ go 1.22.4
 
 require (
 	github.com/imroc/req/v3 v3.43.7
+	github.com/mattn/go-runewidth v0.0.15
 	github.com/oneclickvirt/defaultset v0.0.2-20240624082446
 	github.com/prometheus-community/pro-bing v0.4.0
 )
@@ -17,7 +18,6 @@ require (
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/klauspost/compress v1.17.7 // indirect
-	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/onsi/ginkgo/v2 v2.16.0 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
 	github.com/quic-go/quic-go v0.41.0 // indirect
