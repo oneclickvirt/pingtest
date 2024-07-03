@@ -1,9 +1,13 @@
 package pt
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"os/exec"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +21,7 @@ import (
 
 const ICMPProtocolICMP = 1
 
-func pingServer(server *model.Server, wg *sync.WaitGroup) {
+func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
 		InitLogger()
 		defer Logger.Sync()
@@ -91,6 +95,82 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	}
 	fmt.Println(totalRtt.Milliseconds())
 	server.Avg = totalRtt / time.Duration(pingCount)
+}
+
+func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
+	if model.EnableLoger {
+		InitLogger()
+		defer Logger.Sync()
+	}
+	defer wg.Done()
+	// 执行 ping 命令
+	cmd := exec.Command("ping", "-c1", "-W3", server.IP)
+	output, err := cmd.Output()
+	if err != nil {
+		if model.EnableLoger {
+			Logger.Info("cannot ping: " + err.Error())
+		}
+		pingServerByGolang(server, wg)
+		return
+	}
+	// 解析输出结果
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	var avgTime float64
+	rttRegex := regexp.MustCompile(`time=(\d+\.\d+) ms`)
+	for scanner.Scan() {
+		line := scanner.Text()
+		matches := rttRegex.FindStringSubmatch(line)
+		if len(matches) > 1 {
+			avgTime, err = strconv.ParseFloat(matches[1], 64)
+			if err != nil {
+				if model.EnableLoger {
+					Logger.Info("cannot parse avgTime: " + err.Error())
+				}
+				pingServerByGolang(server, wg)
+				return
+			}
+		}
+	}
+	if avgTime == 0 {
+		if model.EnableLoger {
+			Logger.Info("avgTime is 0.")
+		}
+		pingServerByGolang(server, wg)
+		return
+	}
+	if err := scanner.Err(); err != nil {
+		if model.EnableLoger {
+			Logger.Info("scanner error: " + err.Error())
+		}
+		pingServerByGolang(server, wg)
+		return
+	}
+}
+
+func pingServer(server *model.Server, wg *sync.WaitGroup) {
+	if model.EnableLoger {
+		InitLogger()
+		defer Logger.Sync()
+	}
+	defer wg.Done()
+	cmd := exec.Command("ping", "-h")
+	output, err := cmd.Output()
+	if err != nil {
+		if model.EnableLoger {
+			Logger.Info("cannot ping: " + err.Error())
+		}
+		pingServerByGolang(server, wg)
+		return
+	} else if !strings.Contains(string(output), "Usage") {
+		if model.EnableLoger {
+			Logger.Info("cannot match ping command.")
+		}
+		pingServerByGolang(server, wg)
+		return
+	} else {
+		pingServerByCMD(server, wg)
+		return
+	}
 }
 
 func PingTest() string {
