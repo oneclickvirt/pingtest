@@ -122,7 +122,7 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 	}
 	defer wg.Done()
 	// 执行 ping 命令
-	cmd := exec.Command("ping", "-c1", "-W3", server.IP)
+	cmd := exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if model.EnableLoger {
@@ -130,6 +130,9 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		}
 		// pingServerByGolang(server, wg)
 		return
+	}
+	if model.EnableLoger {
+		Logger.Info(string(output))
 	}
 	// 解析输出结果
 	if !strings.Contains(string(output), "time=") {
@@ -204,7 +207,7 @@ func PingTest() string {
 		for i := range servers {
 			wg.Add(1)
 			// go pingServerByProbing(servers[i], &wg)
-			go pingServer(servers[i], &wg)
+			go pingServerByCMD(servers[i], &wg)
 		}
 		wg.Wait()
 		sort.Slice(servers, func(i, j int) bool {
