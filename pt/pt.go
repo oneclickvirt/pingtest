@@ -2,7 +2,6 @@ package pt
 
 import (
 	"fmt"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -30,28 +29,29 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	}
 	pinger.Count = 3
 	pinger.Size = 24
-	pinger.Interval = 500*time.Millisecond
-	pinger.Timeout = 3*time.Second
+	pinger.Interval = 500 * time.Millisecond
+	pinger.Timeout = 3 * time.Second
 	pinger.TTL = 64
-	if runtime.GOOS != "windows" {
-		pinger.SetPrivileged(false)
-	} else {
-		pinger.SetPrivileged(true)
-	}
-	err = pinger.Run() // 阻塞
-	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("ping failed: " + err.Error())
-		}
-		pinger.SetPrivileged(true) // 无特权模式操作失败，切换特权模式
-		err = pinger.Run()         // 阻塞
-		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("ping failed: " + err.Error())
-			}
-			return
-		}
-	}
+	pinger.SetPrivileged(true)
+	// if runtime.GOOS != "windows" {
+	// 	pinger.SetPrivileged(false)
+	// } else {
+	// 	pinger.SetPrivileged(true)
+	// }
+	// err = pinger.Run() // 阻塞
+	// if err != nil {
+	// 	if model.EnableLoger {
+	// 		Logger.Info("ping failed: " + err.Error())
+	// 	}
+	// 	pinger.SetPrivileged(true) // 无特权模式操作失败，切换特权模式
+	// 	err = pinger.Run()         // 阻塞
+	// 	if err != nil {
+	// 		if model.EnableLoger {
+	// 			Logger.Info("ping failed: " + err.Error())
+	// 		}
+	// 		return
+	// 	}
+	// }
 	stats := pinger.Statistics() // 获取ping统计信息
 	server.Avg = stats.AvgRtt
 }
