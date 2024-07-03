@@ -20,6 +20,7 @@ func main() {
 	pingtestFlag := flag.NewFlagSet("cputest", flag.ContinueOnError)
 	pingtestFlag.BoolVar(&help, "h", false, "Show help information")
 	pingtestFlag.BoolVar(&showVersion, "v", false, "Show version")
+	pingtestFlag.BoolVar(&model.EnableLoger, "log", false, "Enable logging")
 	pingtestFlag.Parse(os.Args[1:])
 	if help {
 		fmt.Printf("Usage: %s [options]\n", os.Args[0])
