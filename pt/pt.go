@@ -129,7 +129,7 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 	defer wg.Done()
 	// 执行 ping 命令
 	cmd := exec.Command("ping", "-c1", "-W3", server.IP)
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if model.EnableLoger {
 			Logger.Info("cannot ping: " + err.Error())
@@ -138,6 +138,13 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		return
 	}
 	// 解析输出结果
+	if !strings.Contains(string(output), "time=") {
+		if model.EnableLoger {
+			Logger.Info("ping failed without time=")
+		}
+		pingServerByGolang(server, wg)
+		return
+	}
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	var avgTime float64
 	rttRegex := regexp.MustCompile(`time=(\d+\.\d+) ms`)
@@ -178,7 +185,7 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	}
 	defer wg.Done()
 	cmd := exec.Command("ping", "-h")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if model.EnableLoger {
 			Logger.Info("cannot ping: " + err.Error())
