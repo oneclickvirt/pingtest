@@ -14,107 +14,6 @@ import (
 	"github.com/oneclickvirt/pingtest/model"
 )
 
-// const ICMPProtocolICMP = 1
-
-// func pingServerByProbing(server *model.Server, wg *sync.WaitGroup) {
-// 	if model.EnableLoger {
-// 		InitLogger()
-// 		defer Logger.Sync()
-// 	}
-// 	defer wg.Done()
-// 	target := server.IP
-// 	pinger, err := probing.NewPinger(target)
-// 	if err != nil {
-// 		if model.EnableLoger {
-// 			Logger.Info("cannot create Pinger: " + err.Error())
-// 		}
-// 		return
-// 	}
-// 	pinger.Count = 3
-// 	pinger.Size = 24
-// 	pinger.Interval = 500 * time.Millisecond
-// 	pinger.Timeout = 3 * time.Second
-// 	pinger.TTL = 64
-// 	pinger.SetPrivileged(true)
-// 	stats := pinger.Statistics() // 获取ping统计信息
-// 	// fmt.Println(stats.MinRtt, stats.AvgRtt, stats.MaxRtt)
-// 	server.Avg = stats.AvgRtt
-// }
-
-// func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
-// 	if model.EnableLoger {
-// 		InitLogger()
-// 		defer Logger.Sync()
-// 	}
-// 	defer wg.Done()
-// 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
-// 	if err != nil {
-// 		if model.EnableLoger {
-// 			Logger.Info("cannot listen for ICMP packets: " + err.Error())
-// 		}
-// 		return
-// 	}
-// 	defer conn.Close()
-// 	target := server.IP
-// 	dst, err := net.ResolveIPAddr("ip4", target)
-// 	if err != nil {
-// 		if model.EnableLoger {
-// 			Logger.Info("cannot resolve IP address: " + err.Error())
-// 		}
-// 		return
-// 	}
-// 	var totalRtt time.Duration
-// 	pingCount := 3
-// 	for i := 0; i < pingCount; i++ {
-// 		msg := icmp.Message{
-// 			Type: ipv4.ICMPTypeEcho,
-// 			Code: 0,
-// 			Body: &icmp.Echo{
-// 				ID:   i,
-// 				Seq:  i,
-// 				Data: []byte("ping"),
-// 			},
-// 		}
-// 		msgBytes, err := msg.Marshal(nil)
-// 		if err != nil {
-// 			if model.EnableLoger {
-// 				Logger.Info("cannot marshal ICMP message: " + err.Error())
-// 			}
-// 			return
-// 		}
-// 		start := time.Now()
-// 		_, err = conn.WriteTo(msgBytes, dst)
-// 		if err != nil {
-// 			if model.EnableLoger {
-// 				Logger.Info("cannot send ICMP message: " + err.Error())
-// 			}
-// 			return
-// 		}
-// 		reply := make([]byte, 1500)
-// 		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-// 		n, _, err := conn.ReadFrom(reply)
-// 		if err != nil {
-// 			if model.EnableLoger {
-// 				Logger.Info("cannot receive ICMP reply: " + err.Error())
-// 			}
-// 			return
-// 		}
-// 		duration := time.Since(start)
-// 		rm, err := icmp.ParseMessage(ICMPProtocolICMP, reply[:n])
-// 		if err != nil {
-// 			if model.EnableLoger {
-// 				Logger.Info("cannot parse ICMP reply: " + err.Error())
-// 			}
-// 			return
-// 		}
-// 		switch rm.Type {
-// 		case ipv4.ICMPTypeEchoReply:
-// 			totalRtt += duration
-// 		}
-// 	}
-// 	server.Avg = totalRtt / time.Duration(float64(pingCount)*float64(time.Millisecond))
-// }
-
 func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
 		InitLogger()
@@ -128,7 +27,6 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		if model.EnableLoger {
 			Logger.Info("cannot ping: " + err.Error())
 		}
-		// pingServerByGolang(server, wg)
 		return
 	}
 	if model.EnableLoger {
@@ -139,62 +37,28 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		if model.EnableLoger {
 			Logger.Info("ping failed without time=")
 		}
-		// pingServerByGolang(server, wg)
 		return
 	}
 	var avgTime float64
 	lines := strings.Split(string(output), "\n")
-	if len(lines) >= 2 {
-		matches := strings.Split(lines[1], "time=")
-		if len(matches) >= 2 {
-			avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
-			if err != nil {
-				if model.EnableLoger {
-					Logger.Info("cannot parse avgTime: " + err.Error())
+	for _, line := range lines {
+		if strings.Contains(line, "time=") {
+			matches := strings.Split(line, "time=")
+			if len(matches) >= 2 {
+				avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
+				if err != nil {
+					if model.EnableLoger {
+						Logger.Info("cannot parse avgTime: " + err.Error())
+					}
+					return
 				}
-				// pingServerByGolang(server, wg)
-				return
+				break
 			}
 		}
 	}
-	// if avgTime == 0 {
-	// 	if model.EnableLoger {
-	// 		Logger.Info("avgTime is 0.")
-	// 	}
-	// 	// pingServerByGolang(server, wg)
-	// 	return
-	// } else {
-	fmt.Println(avgTime)
-	fmt.Println(time.Duration(avgTime * float64(time.Millisecond)))
 	server.Avg = time.Duration(avgTime * float64(time.Millisecond))
-	// }
-}
-
-func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	if model.EnableLoger {
-		InitLogger()
-		defer Logger.Sync()
-	}
-	defer wg.Done()
-	// cmd := exec.Command("ping", "-h")
-	// output, err := cmd.CombinedOutput()
-	// if err != nil {
-	// 	if model.EnableLoger {
-	// 		Logger.Info("cannot ping: " + err.Error())
-	// 	}
-	// 	// pingServerByGolang(server, wg)
-	// 	return
-	// } else if !strings.Contains(string(output), "Usage") {
-	// 	if model.EnableLoger {
-	// 		Logger.Info("cannot match ping command.")
-	// 	}
-	// 	// pingServerByGolang(server, wg)
-	// 	return
-	// } else {
-	// 	pingServerByCMD(server, wg)
-	// 	return
-	// }
-	pingServerByCMD(server, wg)
+	fmt.Println(avgTime)
+	fmt.Println(server.Avg)
 }
 
 func PingTest() string {
@@ -206,7 +70,6 @@ func PingTest() string {
 		var wg sync.WaitGroup
 		for i := range servers {
 			wg.Add(1)
-			// go pingServerByProbing(servers[i], &wg)
 			go pingServerByCMD(servers[i], &wg)
 		}
 		wg.Wait()
@@ -217,18 +80,16 @@ func PingTest() string {
 	}
 	var allServers []*model.Server
 	var wga sync.WaitGroup
+	wga.Add(3)
 	go func() {
-		wga.Add(1)
 		defer wga.Done()
 		servers1 = process(servers1)
 	}()
 	go func() {
-		wga.Add(1)
 		defer wga.Done()
 		servers2 = process(servers2)
 	}()
 	go func() {
-		wga.Add(1)
 		defer wga.Done()
 		servers3 = process(servers3)
 	}()
@@ -241,11 +102,6 @@ func PingTest() string {
 		if i > 0 && i%3 == 0 {
 			result += "\n"
 		}
-		// if server.Avg == 0 {
-		// 	avgStr = "N/A"
-		// } else {
-		// 	avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
-		// }
 		avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
 		name := server.Name
 		nameWidth := runewidth.StringWidth(name)
