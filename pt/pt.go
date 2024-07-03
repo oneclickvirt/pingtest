@@ -37,17 +37,24 @@ func PingTest() string {
 		pinger.SetPrivileged(true)
 	}
 	// 开始ping操作
-	err = pinger.Run() // 阻塞，直到ping操作完成
+	err = pinger.Run() // 阻塞
 	if err != nil {
 		if model.EnableLoger {
 			Logger.Info("ping failed: " + err.Error())
+		}
+		pinger.SetPrivileged(true) // 无特权模式操作失败，切换特权模式
+		err = pinger.Run() // 阻塞
+		if err != nil {
+			if model.EnableLoger {
+				Logger.Info("ping failed: " + err.Error())
+			}
 		}
 	}
 	// 获取ping统计信息
 	stats := pinger.Statistics()
 	// 打印ping统计信息
 	result += fmt.Sprintf("\n--- %s ping statistics ---\n", stats.Addr)
-	result += fmt.Sprintf("%d packets transmitted, %d packets received, %v% packet loss\n",
+	result += fmt.Sprintf("%d packets transmitted, %d packets received, %v%% packet loss\n",
 		stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss)
 	result += fmt.Sprintf("round-trip min/avg/max/stddev = %v/%v/%v/%v\n",
 		stats.MinRtt, stats.AvgRtt, stats.MaxRtt, stats.StdDevRtt)
