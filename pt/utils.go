@@ -1,6 +1,7 @@
 package pt
 
 import (
+	"io"
 	"time"
 
 	"github.com/imroc/req/v3"
