@@ -161,6 +161,8 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 	// 	// pingServerByGolang(server, wg)
 	// 	return
 	// } else {
+	fmt.Println(avgTime)
+	fmt.Println(time.Duration(avgTime * float64(time.Millisecond)))
 	server.Avg = time.Duration(avgTime * float64(time.Millisecond))
 	// }
 }
@@ -171,24 +173,25 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		defer Logger.Sync()
 	}
 	defer wg.Done()
-	cmd := exec.Command("ping", "-h")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot ping: " + err.Error())
-		}
-		// pingServerByGolang(server, wg)
-		return
-	} else if !strings.Contains(string(output), "Usage") {
-		if model.EnableLoger {
-			Logger.Info("cannot match ping command.")
-		}
-		// pingServerByGolang(server, wg)
-		return
-	} else {
-		pingServerByCMD(server, wg)
-		return
-	}
+	// cmd := exec.Command("ping", "-h")
+	// output, err := cmd.CombinedOutput()
+	// if err != nil {
+	// 	if model.EnableLoger {
+	// 		Logger.Info("cannot ping: " + err.Error())
+	// 	}
+	// 	// pingServerByGolang(server, wg)
+	// 	return
+	// } else if !strings.Contains(string(output), "Usage") {
+	// 	if model.EnableLoger {
+	// 		Logger.Info("cannot match ping command.")
+	// 	}
+	// 	// pingServerByGolang(server, wg)
+	// 	return
+	// } else {
+	// 	pingServerByCMD(server, wg)
+	// 	return
+	// }
+	pingServerByCMD(server, wg)
 }
 
 func PingTest() string {
