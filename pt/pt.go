@@ -23,12 +23,13 @@ const (
 	timeout          = 3 * time.Second
 )
 
-func pingServerByGolang(server *model.Server) {
+func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
+
 	if model.EnableLoger {
 		InitLogger()
 		defer Logger.Sync()
 	}
-
+	defer wg.Done()
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
 		logError("cannot listen for ICMP packets: " + err.Error())
@@ -93,50 +94,58 @@ func pingServerByGolang(server *model.Server) {
 }
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	defer wg.Done()
-
 	cmd := exec.Command("sudo", "ping", "-h")
 	output, err := cmd.CombinedOutput()
 	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
-		pingServerByGolang(server)
+		pingServerByGolang(server, wg)
 	} else {
-		pingServerByCMD(server)
+		pingServerByCMD(server, wg)
 	}
 }
 
-func pingServerByCMD(server *model.Server) {
+func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
 		InitLogger()
 		defer Logger.Sync()
 	}
-
+	defer wg.Done()
+	// 执行 ping 命令
 	cmd := exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logError("cannot ping: " + err.Error())
+		if model.EnableLoger {
+			Logger.Info("cannot ping: " + err.Error())
+		}
 		return
 	}
-
+	if model.EnableLoger {
+		Logger.Info(string(output))
+	}
+	// 解析输出结果
 	if !strings.Contains(string(output), "time=") {
-		logError("ping failed without time=")
+		if model.EnableLoger {
+			Logger.Info("ping failed without time=")
+		}
 		return
 	}
-
+	var avgTime float64
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "time=") {
 			matches := strings.Split(line, "time=")
 			if len(matches) >= 2 {
-				avgTime, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
+				avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
 				if err != nil {
-					logError("cannot parse avgTime: " + err.Error())
+					if model.EnableLoger {
+						Logger.Info("cannot parse avgTime: " + err.Error())
+					}
 					return
 				}
-				server.Avg = time.Duration(avgTime * float64(time.Millisecond))
 				break
 			}
 		}
 	}
+	server.Avg = time.Duration(avgTime * float64(time.Millisecond))
 }
 
 func PingTest() string {
