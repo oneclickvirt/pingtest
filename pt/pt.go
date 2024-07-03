@@ -3,29 +3,31 @@ package pt
 import (
 	"fmt"
 	"runtime"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/mattn/go-runewidth"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
-	"github.com/prometheus-community/pro-bing"
+	probing "github.com/prometheus-community/pro-bing"
 )
 
-func PingTest() string {
+func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
 		InitLogger()
 		defer Logger.Sync()
 	}
-	var result string
-	// 要ping的目标主机
-	target := "www.google.com"
-	// 创建一个新的pinger
+	defer wg.Done()
+	target := server.IP
 	pinger, err := probing.NewPinger(target)
 	if err != nil {
 		if model.EnableLoger {
 			Logger.Info("cannot create Pinger: " + err.Error())
 		}
+		return
 	}
-	// 设置ping的次数
 	pinger.Count = 3
 	pinger.Size = 24
 	pinger.Interval = time.Second
@@ -36,27 +38,79 @@ func PingTest() string {
 	} else {
 		pinger.SetPrivileged(true)
 	}
-	// 开始ping操作
 	err = pinger.Run() // 阻塞
 	if err != nil {
 		if model.EnableLoger {
 			Logger.Info("ping failed: " + err.Error())
 		}
 		pinger.SetPrivileged(true) // 无特权模式操作失败，切换特权模式
-		err = pinger.Run() // 阻塞
+		err = pinger.Run()         // 阻塞
 		if err != nil {
 			if model.EnableLoger {
 				Logger.Info("ping failed: " + err.Error())
 			}
+			return
 		}
 	}
-	// 获取ping统计信息
-	stats := pinger.Statistics()
-	// 打印ping统计信息
-	result += fmt.Sprintf("\n--- %s ping statistics ---\n", stats.Addr)
-	result += fmt.Sprintf("%d packets transmitted, %d packets received, %v%% packet loss\n",
-		stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss)
-	result += fmt.Sprintf("round-trip min/avg/max/stddev = %v/%v/%v/%v\n",
-		stats.MinRtt, stats.AvgRtt, stats.MaxRtt, stats.StdDevRtt)
+	stats := pinger.Statistics() // 获取ping统计信息
+	server.Avg = stats.AvgRtt
+}
+
+func PingTest() string {
+	var result string
+	servers1 := getServers("cu")
+	servers2 := getServers("ct")
+	servers3 := getServers("cmcc")
+	process := func(servers []model.Server) []model.Server {
+		var wg sync.WaitGroup
+		for i := range servers {
+			wg.Add(1)
+			go pingServer(&servers[i], &wg)
+		}
+		wg.Wait()
+		sort.Slice(servers, func(i, j int) bool {
+			return servers[i].Avg < servers[j].Avg
+		})
+		return servers
+	}
+	var allServers []model.Server
+	var wga sync.WaitGroup
+	go func() {
+		wga.Add(1)
+		defer wga.Done()
+		servers1 = process(servers1)
+	}()
+	go func() {
+		wga.Add(1)
+		defer wga.Done()
+		servers2 = process(servers2)
+	}()
+	go func() {
+		wga.Add(1)
+		defer wga.Done()
+		servers3 = process(servers3)
+	}()
+	wga.Wait()
+	allServers = append(allServers, servers1...)
+	allServers = append(allServers, servers2...)
+	allServers = append(allServers, servers3...)
+	var avgStr string
+	for i, server := range allServers {
+		if i > 0 && i%3 == 0 {
+			result += "\n"
+		}
+		if server.Avg.String() == "0s" {
+			avgStr = "N/A"
+		} else {
+			avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
+		}
+		name := server.Name
+		nameWidth := runewidth.StringWidth(name)
+		padding := 16 - nameWidth
+		if padding < 0 {
+			padding = 0
+		}
+		result += fmt.Sprintf("%s%s%4s | ", name, strings.Repeat(" ", padding), avgStr)
+	}
 	return result
 }

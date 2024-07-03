@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 const PingTestVersion = "v0.0.1"
 
 var EnableLoger = false
@@ -24,5 +26,5 @@ type Server struct {
 	Name string
 	IP   string
 	Port string
-	Avg  int
+	Avg  time.Duration
 }
