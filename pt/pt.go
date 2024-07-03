@@ -17,32 +17,11 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-const ICMPProtocolICMP = 1
-
-// func pingServerByProbing(server *model.Server, wg *sync.WaitGroup) {
-// 	if model.EnableLoger {
-// 		InitLogger()
-// 		defer Logger.Sync()
-// 	}
-// 	defer wg.Done()
-// 	target := server.IP
-// 	pinger, err := probing.NewPinger(target)
-// 	if err != nil {
-// 		if model.EnableLoger {
-// 			Logger.Info("cannot create Pinger: " + err.Error())
-// 		}
-// 		return
-// 	}
-// 	pinger.Count = 3
-// 	pinger.Size = 24
-// 	pinger.Interval = 500 * time.Millisecond
-// 	pinger.Timeout = 3 * time.Second
-// 	pinger.TTL = 64
-// 	pinger.SetPrivileged(true)
-// 	stats := pinger.Statistics() // 获取ping统计信息
-// 	// fmt.Println(stats.MinRtt, stats.AvgRtt, stats.MaxRtt)
-// 	server.Avg = stats.AvgRtt
-// }
+const (
+	ICMPProtocolICMP = 1
+	pingCount        = 3
+	timeout          = 3 * time.Second
+)
 
 func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
@@ -50,24 +29,23 @@ func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 		defer Logger.Sync()
 	}
 	defer wg.Done()
+
 	conn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
 	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot listen for ICMP packets: " + err.Error())
-		}
+		logError("cannot listen for ICMP packets: " + err.Error())
 		return
 	}
 	defer conn.Close()
+
 	target := server.IP
 	dst, err := net.ResolveIPAddr("ip4", target)
 	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot resolve IP address: " + err.Error())
-		}
+		logError("cannot resolve IP address: " + err.Error())
 		return
 	}
+
 	var totalRtt time.Duration
-	pingCount := 3
+
 	for i := 0; i < pingCount; i++ {
 		msg := icmp.Message{
 			Type: ipv4.ICMPTypeEcho,
@@ -78,69 +56,52 @@ func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 				Data: []byte("ping"),
 			},
 		}
+
 		msgBytes, err := msg.Marshal(nil)
 		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot marshal ICMP message: " + err.Error())
-			}
+			logError("cannot marshal ICMP message: " + err.Error())
 			return
 		}
+
 		start := time.Now()
 		_, err = conn.WriteTo(msgBytes, dst)
 		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot send ICMP message: " + err.Error())
-			}
+			logError("cannot send ICMP message: " + err.Error())
 			return
 		}
+
 		reply := make([]byte, 1500)
-		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		conn.SetReadDeadline(time.Now().Add(timeout))
 		n, _, err := conn.ReadFrom(reply)
 		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot receive ICMP reply: " + err.Error())
-			}
+			logError("cannot receive ICMP reply: " + err.Error())
 			return
 		}
+
 		duration := time.Since(start)
 		rm, err := icmp.ParseMessage(ICMPProtocolICMP, reply[:n])
 		if err != nil {
-			if model.EnableLoger {
-				Logger.Info("cannot parse ICMP reply: " + err.Error())
-			}
+			logError("cannot parse ICMP reply: " + err.Error())
 			return
 		}
-		switch rm.Type {
-		case ipv4.ICMPTypeEchoReply:
+
+		if rm.Type == ipv4.ICMPTypeEchoReply {
 			totalRtt += duration
 		}
 	}
-	server.Avg = totalRtt / time.Duration(float64(pingCount)*float64(time.Millisecond))
+
+	server.Avg = totalRtt / time.Duration(pingCount)
 }
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	if model.EnableLoger {
-		InitLogger()
-		defer Logger.Sync()
-	}
 	defer wg.Done()
+
 	cmd := exec.Command("sudo", "ping", "-h")
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot ping: " + err.Error())
-		}
+	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
 		pingServerByGolang(server, wg)
-		return
-	} else if !strings.Contains(string(output), "Usage") {
-		if model.EnableLoger {
-			Logger.Info("cannot match ping command.")
-		}
-		pingServerByGolang(server, wg)
-		return
 	} else {
 		pingServerByCMD(server, wg)
-		return
 	}
 }
 
@@ -150,43 +111,34 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		defer Logger.Sync()
 	}
 	defer wg.Done()
-	// 执行 ping 命令
+
 	cmd := exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		if model.EnableLoger {
-			Logger.Info("cannot ping: " + err.Error())
-		}
+		logError("cannot ping: " + err.Error())
 		return
 	}
-	if model.EnableLoger {
-		Logger.Info(string(output))
-	}
-	// 解析输出结果
+
 	if !strings.Contains(string(output), "time=") {
-		if model.EnableLoger {
-			Logger.Info("ping failed without time=")
-		}
+		logError("ping failed without time=")
 		return
 	}
-	var avgTime float64
+
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "time=") {
 			matches := strings.Split(line, "time=")
 			if len(matches) >= 2 {
-				avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
+				avgTime, err := strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
 				if err != nil {
-					if model.EnableLoger {
-						Logger.Info("cannot parse avgTime: " + err.Error())
-					}
+					logError("cannot parse avgTime: " + err.Error())
 					return
 				}
+				server.Avg = time.Duration(avgTime * float64(time.Millisecond))
 				break
 			}
 		}
 	}
-	server.Avg = time.Duration(avgTime * float64(time.Millisecond))
 }
 
 func PingTest() string {
@@ -194,6 +146,7 @@ func PingTest() string {
 	servers1 := getServers("cu")
 	servers2 := getServers("ct")
 	servers3 := getServers("cmcc")
+
 	process := func(servers []*model.Server) []*model.Server {
 		var wg sync.WaitGroup
 		for i := range servers {
@@ -206,6 +159,7 @@ func PingTest() string {
 		})
 		return servers
 	}
+
 	var allServers []*model.Server
 	var wga sync.WaitGroup
 	wga.Add(3)
@@ -222,27 +176,33 @@ func PingTest() string {
 		servers3 = process(servers3)
 	}()
 	wga.Wait()
+
 	allServers = append(allServers, servers1...)
 	allServers = append(allServers, servers2...)
 	allServers = append(allServers, servers3...)
-	var avgStr string
+
 	var count int
 	for _, server := range allServers {
-		avgStr = fmt.Sprintf("%4d", server.Avg.Milliseconds())
+		avgStr := fmt.Sprintf("%4d", server.Avg.Milliseconds())
 		if avgStr == "0" {
 			continue
 		}
 		if count > 0 && count%3 == 0 {
 			result += "\n"
 		}
-		count += 1
+		count++
 		name := server.Name
-		nameWidth := runewidth.StringWidth(name)
-		padding := 16 - nameWidth
+		padding := 16 - runewidth.StringWidth(name)
 		if padding < 0 {
 			padding = 0
 		}
 		result += fmt.Sprintf("%s%s%4s | ", name, strings.Repeat(" ", padding), avgStr)
 	}
 	return result
+}
+
+func logError(msg string) {
+	if model.EnableLoger {
+		Logger.Info(msg)
+	}
 }
