@@ -40,7 +40,11 @@ pt
 无环境依赖，理论上适配所有系统和主流架构，更多架构请查看 https://github.com/oneclickvirt/pingtest/releases/tag/output
 
 ```
-
+Usage: pt [options]
+  -h    Show help information
+  -log
+        Enable logging
+  -v    Show version
 ```
 
 ## 卸载
