@@ -115,8 +115,7 @@ func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 			totalRtt += duration
 		}
 	}
-	fmt.Println(totalRtt.Milliseconds())
-	server.Avg = totalRtt / time.Duration(pingCount)
+	server.Avg = totalRtt / time.Duration(float64(pingCount)*float64(time.Millisecond))
 }
 
 func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
@@ -165,7 +164,7 @@ func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
 		pingServerByGolang(server, wg)
 		return
 	} else {
-		server.Avg = time.Duration(avgTime)
+		server.Avg = time.Duration(avgTime * float64(time.Millisecond))
 	}
 }
 
