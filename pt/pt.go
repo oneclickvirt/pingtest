@@ -2,6 +2,7 @@ package pt
 
 import (
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -10,8 +11,11 @@ import (
 	"github.com/mattn/go-runewidth"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
-	probing "github.com/prometheus-community/pro-bing"
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
 )
+
+const ICMPProtocolICMP = 1
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
 	if model.EnableLoger {
@@ -19,22 +23,80 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		defer Logger.Sync()
 	}
 	defer wg.Done()
-	target := server.IP
-	pinger, err := probing.NewPinger(target)
+
+	conn, err := icmp.ListenPacket("ip4:icmp", "")
 	if err != nil {
 		if model.EnableLoger {
-			Logger.Info("cannot create Pinger: " + err.Error())
+			Logger.Info("cannot listen for ICMP packets: " + err.Error())
 		}
 		return
 	}
-	pinger.Count = 3
-	pinger.Size = 24
-	pinger.Interval = 500 * time.Millisecond
-	pinger.Timeout = 3 * time.Second
-	pinger.TTL = 64
-	pinger.SetPrivileged(true)
-	stats := pinger.Statistics() // 获取ping统计信息
-	server.Avg = stats.AvgRtt
+	defer conn.Close()
+
+	target := server.IP
+	dst, err := net.ResolveIPAddr("ip4", target)
+	if err != nil {
+		if model.EnableLoger {
+			Logger.Info("cannot resolve IP address: " + err.Error())
+		}
+		return
+	}
+
+	var totalRtt time.Duration
+	pingCount := 3
+	for i := 0; i < pingCount; i++ {
+		msg := icmp.Message{
+			Type: ipv4.ICMPTypeEcho,
+			Code: 0,
+			Body: &icmp.Echo{
+				ID:   i,
+				Seq:  i,
+				Data: []byte("ping"),
+			},
+		}
+		msgBytes, err := msg.Marshal(nil)
+		if err != nil {
+			if model.EnableLoger {
+				Logger.Info("cannot marshal ICMP message: " + err.Error())
+			}
+			return
+		}
+
+		start := time.Now()
+		_, err = conn.WriteTo(msgBytes, dst)
+		if err != nil {
+			if model.EnableLoger {
+				Logger.Info("cannot send ICMP message: " + err.Error())
+			}
+			return
+		}
+
+		reply := make([]byte, 1500)
+		conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		n, _, err := conn.ReadFrom(reply)
+		if err != nil {
+			if model.EnableLoger {
+				Logger.Info("cannot receive ICMP reply: " + err.Error())
+			}
+			return
+		}
+		duration := time.Since(start)
+
+		rm, err := icmp.ParseMessage(ICMPProtocolICMP, reply[:n])
+		if err != nil {
+			if model.EnableLoger {
+				Logger.Info("cannot parse ICMP reply: " + err.Error())
+			}
+			return
+		}
+
+		switch rm.Type {
+		case ipv4.ICMPTypeEchoReply:
+			totalRtt += duration
+		}
+	}
+
+	server.Avg = totalRtt / time.Duration(pingCount)
 }
 
 func PingTest() string {
