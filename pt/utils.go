@@ -56,8 +56,8 @@ func resolveIP(name string) string {
 	return ""
 }
 
-func parseCSVData(data, platform, operator string) []model.Server {
-	var servers []model.Server
+func parseCSVData(data, platform, operator string) []*model.Server {
+	var servers []*model.Server
 	r := csv.NewReader(strings.NewReader(data))
 	records, err := r.ReadAll()
 	if err != nil {
@@ -81,7 +81,7 @@ func parseCSVData(data, platform, operator string) []model.Server {
 	if platform == "net" {
 		for _, record := range records {
 			if len(record) >= 8 {
-				servers = append(servers, model.Server{
+				servers = append(servers, &model.Server{
 					Name: head + record[3],
 					IP:   record[4],
 					Port: record[6],
@@ -103,7 +103,7 @@ func parseCSVData(data, platform, operator string) []model.Server {
 				if !strings.Contains(name, head) {
 					name = head + name
 				}
-				servers = append(servers, model.Server{
+				servers = append(servers, &model.Server{
 					Name: name,
 					IP:   ip,
 					Port: strings.Split(record[5], ":")[1],
@@ -114,12 +114,12 @@ func parseCSVData(data, platform, operator string) []model.Server {
 	return servers
 }
 
-func getServers(operator string) []model.Server {
+func getServers(operator string) []*model.Server {
 	netList := []string{model.NetCMCC, model.NetCT, model.NetCU}
 	cnList := []string{model.CnCMCC, model.CnCT, model.CnCU}
-	var servers []model.Server
+	var servers []*model.Server
 	var wg sync.WaitGroup
-	dataCh := make(chan []model.Server, 2)
+	dataCh := make(chan []*model.Server, 2)
 	// 定义一个函数来获取数据并解析
 	fetchData := func(data string, dataType, operator string) {
 		defer wg.Done()
@@ -149,20 +149,20 @@ func getServers(operator string) []model.Server {
 		servers = append(servers, data...)
 	}
 	// 去重IP
-	uniqueServers := make(map[string]model.Server)
+	uniqueServers := make(map[string]*model.Server)
 	for _, server := range servers {
 		uniqueServers[server.IP] = server
 	}
-	servers = []model.Server{}
+	servers = []*model.Server{}
 	for _, server := range uniqueServers {
 		servers = append(servers, server)
 	}
 	// 去重地址
-	uniqueServers = make(map[string]model.Server)
+	uniqueServers = make(map[string]*model.Server)
 	for _, server := range servers {
 		uniqueServers[server.Name] = server
 	}
-	servers = []model.Server{}
+	servers = []*model.Server{}
 	for _, server := range uniqueServers {
 		servers = append(servers, server)
 	}
