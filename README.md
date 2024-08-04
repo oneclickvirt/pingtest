@@ -9,10 +9,7 @@
 - [x] 基于[speedtest.net-爬虫](https://github.com/spiritLHLS/speedtest.net-CN-ID)、[speedtest.cn-爬虫](https://github.com/spiritLHLS/speedtest.cn-CN-ID)的数据
 - [x] 调用```ping```测试
 - [x] 主体逻辑借鉴了[ecsspeed](https://github.com/spiritLHLS/ecsspeed)
-
-## TODO
-
-- [ ] 使用官方的```icmp```包进行测试
+- [x] 使用官方的```pro-bing```包进行测试
 
 ## 使用
 
