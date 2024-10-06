@@ -126,13 +126,14 @@ func PingTest() string {
 			wg.Add(1)
 			go pingServer(servers[i], &wg)
 		}
-		wg.Wait()
+		wg.Wait() // 确保在此处等待所有的 pingServer 完成
 		sort.Slice(servers, func(i, j int) bool {
 			return servers[i].Avg < servers[j].Avg
 		})
 		return servers
 	}
 
+	// 创建一个新的 WaitGroup 用于处理所有服务器
 	var allServers []*model.Server
 	var wga sync.WaitGroup
 	wga.Add(3)
@@ -148,7 +149,7 @@ func PingTest() string {
 		defer wga.Done()
 		servers3 = process(servers3)
 	}()
-	wga.Wait()
+	wga.Wait() // 等待所有的 goroutine 完成
 
 	allServers = append(allServers, servers1...)
 	allServers = append(allServers, servers2...)
