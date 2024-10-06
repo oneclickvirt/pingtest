@@ -21,8 +21,7 @@ const (
 	timeout          = 3 * time.Second
 )
 
-func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
-	defer wg.Done()
+func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync() // 确保在函数结束时冲刷日志
 	}
@@ -54,18 +53,18 @@ func pingServerByGolang(server *model.Server, wg *sync.WaitGroup) {
 }
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	defer wg.Done()
+	defer wg.Done() // 确保 Done() 在函数返回时调用
 	cmd := exec.Command("sudo", "ping", "-h")
 	output, err := cmd.CombinedOutput()
 	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
-		pingServerByGolang(server, wg)
+		pingServerByGolang(server) // 此时无需传递 WaitGroup
 	} else {
-		pingServerByCMD(server, wg)
+		pingServerByCMD(server) // 传递相同的方式
 	}
 }
 
-func pingServerByCMD(server *model.Server, wg *sync.WaitGroup) {
-	defer wg.Done()
+func pingServerByCMD(server *model.Server) {
+	// 不需要再调用 Done()，它已经在 pingServer 中处理了
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
@@ -126,19 +125,19 @@ func PingTest() string {
 			wg.Add(1)
 			go pingServer(servers[i], &wg)
 		}
-		wg.Wait() // 确保在此处等待所有的 pingServer 完成
+		wg.Wait() // 确保所有的 pingServer 完成
 		sort.Slice(servers, func(i, j int) bool {
 			return servers[i].Avg < servers[j].Avg
 		})
 		return servers
 	}
 
-	// 创建一个新的 WaitGroup 用于处理所有服务器
 	var allServers []*model.Server
 	var wga sync.WaitGroup
-	wga.Add(3)
+	wga.Add(3) // 分别为每个服务器组处理
+
 	go func() {
-		defer wga.Done()
+		defer wga.Done() // 确保 Done() 调用
 		servers1 = process(servers1)
 	}()
 	go func() {
@@ -149,12 +148,14 @@ func PingTest() string {
 		defer wga.Done()
 		servers3 = process(servers3)
 	}()
-	wga.Wait() // 等待所有的 goroutine 完成
+	
+	wga.Wait() // 确保所有 goroutine 完成
 
 	allServers = append(allServers, servers1...)
 	allServers = append(allServers, servers2...)
 	allServers = append(allServers, servers3...)
 
+	// 输出结果
 	var count int
 	for _, server := range allServers {
 		if server.Avg.Milliseconds() == 0 {
