@@ -3,6 +3,7 @@ package pt
 import (
 	"context"
 	"encoding/csv"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -66,9 +67,16 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 		}
 		return servers
 	}
-	if len(records) > 0 && (records[0][6] == "country_code" || records[0][1] == "country_code") {
-		records = records[1:]
+
+	// 检查并去除 CSV 头部（header）
+	if len(records) > 0 {
+		if len(records[0]) > 6 && records[0][6] == "country_code" {
+			records = records[1:]
+		} else if len(records[0]) > 1 && records[0][1] == "country_code" {
+			records = records[1:]
+		}
 	}
+
 	var head string
 	switch operator {
 	case "cmccc":
@@ -78,21 +86,35 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 	case "cu":
 		head = "联通"
 	}
+
 	if platform == "net" {
 		for _, record := range records {
+			// 确保记录至少包含8个字段
 			if len(record) >= 8 {
 				servers = append(servers, &model.Server{
 					Name: head + record[3],
 					IP:   record[4],
 					Port: record[6],
 				})
+			} else {
+				if model.EnableLoger {
+					Logger.Info(fmt.Sprintf("CSV 数据字段不足 (net): %d", len(record)))
+				}
 			}
 		}
 	} else if platform == "cn" {
 		var name, ip string
 		for _, record := range records {
-			if len(record) >= 8 {
-				ip = strings.Split(record[5], ":")[0]
+			// 确保记录至少包含11个字段以便安全访问 record[10] 和 record[8]
+			if len(record) >= 11 {
+				parts := strings.Split(record[5], ":")
+				if len(parts) < 2 {
+					if model.EnableLoger {
+						Logger.Info(fmt.Sprintf("record[5] 格式错误，缺少端口信息: %s", record[5]))
+					}
+					continue
+				}
+				ip = parts[0]
 				if net.ParseIP(ip) == nil {
 					ip = resolveIP(ip)
 					if ip == "" {
@@ -106,8 +128,12 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 				servers = append(servers, &model.Server{
 					Name: name,
 					IP:   ip,
-					Port: strings.Split(record[5], ":")[1],
+					Port: parts[1],
 				})
+			} else {
+				if model.EnableLoger {
+					Logger.Info(fmt.Sprintf("CSV 数据字段不足 (cn): %d", len(record)))
+				}
 			}
 		}
 	}
@@ -120,6 +146,7 @@ func getServers(operator string) []*model.Server {
 	var servers []*model.Server
 	var wg sync.WaitGroup
 	dataCh := make(chan []*model.Server, 2)
+
 	// 定义一个函数来获取数据并解析
 	fetchData := func(data string, dataType, operator string) {
 		defer wg.Done()
