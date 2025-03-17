@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const PingTestVersion = "v0.0.5"
+const PingTestVersion = "v0.0.6"
 
 var EnableLoger = false
 
@@ -15,7 +15,7 @@ var (
 	CnCU    = "https://raw.githubusercontent.com/spiritLHLS/speedtest.cn-CN-ID/main/unicom.csv"
 	CdnList = []string{
 		"http://cdn1.spiritlhl.net/",
-		"http://cdn2.spiritlhl.net/", 
+		"http://cdn2.spiritlhl.net/",
 		"http://cdn3.spiritlhl.net/",
 		"http://cdn4.spiritlhl.net/",
 	}
