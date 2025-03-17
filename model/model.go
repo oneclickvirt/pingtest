@@ -14,11 +14,10 @@ var (
 	CnCT    = "https://raw.githubusercontent.com/spiritLHLS/speedtest.cn-CN-ID/main/telecom.csv"
 	CnCU    = "https://raw.githubusercontent.com/spiritLHLS/speedtest.cn-CN-ID/main/unicom.csv"
 	CdnList = []string{
-		"http://cdn0.spiritlhl.top/",
-		"http://cdn1.spiritlhl.top/",
 		"http://cdn1.spiritlhl.net/",
+		"http://cdn2.spiritlhl.net/", 
 		"http://cdn3.spiritlhl.net/",
-		"http://cdn2.spiritlhl.net/",
+		"http://cdn4.spiritlhl.net/",
 	}
 )
 
