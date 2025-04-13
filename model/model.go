@@ -5,7 +5,7 @@ import "time"
 const PingTestVersion = "v0.0.7"
 
 var EnableLoger = false
-var MaxConcurrency = 20 // 并发量
+var MaxConcurrency = 30 // 并发量
 var (
 	IcmpTargets = "https://raw.githubusercontent.com/spiritLHLS/icmp_targets/main/nodes.json"
 	NetCMCC     = "https://raw.githubusercontent.com/spiritLHLS/speedtest.net-CN-ID/main/CN_Mobile.csv"
