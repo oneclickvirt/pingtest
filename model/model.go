@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const PingTestVersion = "v0.0.6"
+const PingTestVersion = "v0.0.7"
 
 var EnableLoger = false
 

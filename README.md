@@ -6,10 +6,10 @@
 
 ## 说明
 
-- [x] 基于[speedtest.net-爬虫](https://github.com/spiritLHLS/speedtest.net-CN-ID)、[speedtest.cn-爬虫](https://github.com/spiritLHLS/speedtest.cn-CN-ID)的数据
-- [x] 调用```ping```测试
+- [x] 基于[speedtestnet](https://github.com/spiritLHLS/speedtest.net-CN-ID)、[speedtestcn](https://github.com/spiritLHLS/speedtest.cn-CN-ID)、[icmp_targets](https://github.comspiritLHLS/icmp_targets)的数据
+- [x] 支持调用本机```ping```进行测试
+- [x] 支持使用官方```pro-bing```库进行测试
 - [x] 主体逻辑借鉴了[ecsspeed](https://github.com/spiritLHLS/ecsspeed)
-- [x] 使用官方的```pro-bing```包进行测试
 
 ## 使用
 
