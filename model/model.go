@@ -5,7 +5,7 @@ import "time"
 const PingTestVersion = "v0.0.7"
 
 var EnableLoger = false
-
+var MaxConcurrency = 100 // 并发量
 var (
 	IcmpTargets = "https://raw.githubusercontent.com/spiritLHLS/icmp_targets/refs/heads/main/nodes.json"
 	NetCMCC     = "https://raw.githubusercontent.com/spiritLHLS/speedtest.net-CN-ID/main/CN_Mobile.csv"
@@ -23,10 +23,11 @@ var (
 )
 
 type Server struct {
-	Name string
-	IP   string
-	// Port string
-	Avg time.Duration
+	Name       string
+	IP         string
+	Avg        time.Duration
+	Tested     bool   // 标记是否已经测试过
+	SourceType string // 记录来源类型
 }
 
 type IcmpTarget struct {

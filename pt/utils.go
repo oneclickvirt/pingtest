@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -106,9 +107,10 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 			// 确保记录至少包含8个字段
 			if len(record) >= 8 {
 				servers = append(servers, &model.Server{
-					Name: head + record[3],
-					IP:   record[4],
-					// Port: record[6],
+					Name:       head + record[3],
+					IP:         record[4],
+					Tested:     false,
+					SourceType: "net",
 				})
 			} else {
 				if model.EnableLoger {
@@ -140,9 +142,10 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 					name = head + name
 				}
 				servers = append(servers, &model.Server{
-					Name: name,
-					IP:   ip,
-					// Port: parts[1],
+					Name:       name,
+					IP:         ip,
+					Tested:     false,
+					SourceType: "cn",
 				})
 			} else {
 				if model.EnableLoger {
@@ -209,9 +212,10 @@ func getIcmpServers(operator string) []*model.Server {
 					if ip != "" && net.ParseIP(ip) != nil { // 确保IP有效
 						serverName := ispNameMap[target.IspCode] + target.Province
 						icmpServers = append(icmpServers, &model.Server{
-							Name: serverName,
-							IP:   ip,
-							// Port: "80",
+							Name:       serverName,
+							IP:         ip,
+							Tested:     false,
+							SourceType: "icmp",
 						})
 					}
 				}
@@ -221,12 +225,30 @@ func getIcmpServers(operator string) []*model.Server {
 	return icmpServers
 }
 
+// 对服务器按省份名称进行分组
+func groupServersByProvince(servers []*model.Server) map[string][]*model.Server {
+	provinceMap := make(map[string][]*model.Server)
+	for _, server := range servers {
+		// 提取省份名称（假设名称格式为"运营商+省份"）
+		var province string
+		if len(server.Name) > 2 {
+			province = server.Name[2:] // 跳过运营商名称（如"移动"）
+		} else {
+			province = server.Name
+		}
+
+		// 将服务器添加到对应省份的列表中
+		provinceMap[province] = append(provinceMap[province], server)
+	}
+	return provinceMap
+}
+
 func getServers(operator string) []*model.Server {
 	netList := []string{model.NetCMCC, model.NetCT, model.NetCU}
 	cnList := []string{model.CnCMCC, model.CnCT, model.CnCU}
 	var servers []*model.Server
 	var wg sync.WaitGroup
-	dataCh := make(chan []*model.Server, 2)
+	dataCh := make(chan []*model.Server, 3)
 	fetchData := func(data string, dataType, operator string) {
 		defer wg.Done()
 		if data != "" {
@@ -237,22 +259,33 @@ func getServers(operator string) []*model.Server {
 		}
 	}
 	var ispCode string
+	var netIndex, cnIndex int
 	switch operator {
 	case "cmcc":
 		ispCode = "cm"
+		netIndex, cnIndex = 0, 0
 	case "ct":
 		ispCode = "ct"
+		netIndex, cnIndex = 1, 1
 	case "cu":
 		ispCode = "cu"
+		netIndex, cnIndex = 2, 2
 	}
+	// 确保ICMP目标数据已加载
 	if !icmpTargetsInitialized {
 		loadIcmpTargets()
 	}
-	icmpServers := getIcmpServers(ispCode)
+	// 获取ICMP服务器并放入通道
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		icmpServers := getIcmpServers(ispCode)
+		dataCh <- icmpServers
+	}()
 	// 获取其他两种来源的数据
 	wg.Add(2)
-	go fetchData(getData(netList[0]), "net", operator)
-	go fetchData(getData(cnList[0]), "cn", operator)
+	go fetchData(getData(netList[netIndex]), "net", operator)
+	go fetchData(getData(cnList[cnIndex]), "cn", operator)
 	go func() {
 		wg.Wait()
 		close(dataCh)
@@ -261,37 +294,27 @@ func getServers(operator string) []*model.Server {
 	for data := range dataCh {
 		servers = append(servers, data...)
 	}
-	// 添加ICMP服务器（不需要通过通道，因为已经同步获取）
-	servers = append(servers, icmpServers...)
-	// 去重：先按IP去重
-	uniqueIPServers := make(map[string]*model.Server)
-	for _, server := range servers {
-		if server == nil || server.IP == "" {
-			continue
-		}
-		// 如果IP已存在，但当前服务器名称更好（非空），则替换
-		existing, exists := uniqueIPServers[server.IP]
-		if !exists || (server.Name != "" && existing.Name == "") {
-			uniqueIPServers[server.IP] = server
-		}
+	// 按省份对服务器进行分组
+	provinceMap := groupServersByProvince(servers)
+	// 按照一致的顺序整理服务器列表
+	var result []*model.Server
+	// 先处理所有不同的省份
+	// 为了保持一致性，我们可以按省份名称排序
+	var provinces []string
+	for province := range provinceMap {
+		provinces = append(provinces, province)
 	}
-	// 将去重后的服务器重新收集到数组
-	servers = []*model.Server{}
-	for _, server := range uniqueIPServers {
-		servers = append(servers, server)
-	}
-	// 按名称去重（保留不同名称的服务器）
-	uniqueNameServers := make(map[string]*model.Server)
-	for _, server := range servers {
-		if server.Name == "" {
-			continue
-		}
-		uniqueNameServers[server.Name] = server
-	}
-	// 最终结果
-	result := []*model.Server{}
-	for _, server := range uniqueNameServers {
-		result = append(result, server)
+	sort.Strings(provinces)
+	// 对每个省份，先添加ICMP服务器，然后是net，最后是cn
+	for _, province := range provinces {
+		provinceServers := provinceMap[province]
+		// 按照来源类型排序
+		sort.SliceStable(provinceServers, func(i, j int) bool {
+			sources := map[string]int{"icmp": 0, "net": 1, "cn": 2}
+			return sources[provinceServers[i].SourceType] < sources[provinceServers[j].SourceType]
+		})
+		// 添加到最终结果
+		result = append(result, provinceServers...)
 	}
 	return result
 }
