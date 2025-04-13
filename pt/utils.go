@@ -200,10 +200,12 @@ func getIcmpServers(operator string) []*model.Server {
 			// 只处理 IPv4 版本的地址且运营商匹配的条目
 			if target.IPVersion == "v4" && target.IspCode == operator {
 				ips := strings.Split(target.IPs, ",")
+				logError("IPS: " + target.IPs)
 				for _, ip := range ips {
 					ip = strings.TrimSpace(ip)
-					if ip != "" && net.ParseIP(ip) != nil { // 确保IP有效
+					if ip != "" && net.ParseIP(ip) != nil {
 						serverName := ispNameMap[target.IspCode] + target.Province
+						logError(serverName + " " + ip)
 						icmpServers = append(icmpServers, &model.Server{
 							Name:       serverName,
 							IP:         ip,
