@@ -182,6 +182,17 @@ func loadIcmpTargets() {
 	}
 }
 
+func cleanProvince(input string) string {
+	suffixes := []string{"维吾尔自治区", "回族自治区", "自治区", "省", "市"}
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(input, suffix) {
+			input = strings.TrimSuffix(input, suffix)
+			break
+		}
+	}
+	return input
+}
+
 // 获取ICMP目标服务器
 func getIcmpServers(operator string) []*model.Server {
 	// 确保ICMP目标数据已加载
@@ -197,15 +208,12 @@ func getIcmpServers(operator string) []*model.Server {
 	}
 	if len(icmpTargetsCache) > 0 {
 		for _, target := range icmpTargetsCache {
-			// 只处理 IPv4 版本的地址且运营商匹配的条目
 			if target.IPVersion == "v4" && target.IspCode == operator {
 				ips := strings.Split(target.IPs, ",")
-				logError("IPS: " + target.IPs)
 				for _, ip := range ips {
 					ip = strings.TrimSpace(ip)
 					if ip != "" && net.ParseIP(ip) != nil {
-						serverName := ispNameMap[target.IspCode] + target.Province
-						logError(serverName + " " + ip)
+						serverName := ispNameMap[target.IspCode] + cleanProvince(target.Province)
 						icmpServers = append(icmpServers, &model.Server{
 							Name:       serverName,
 							IP:         ip,
