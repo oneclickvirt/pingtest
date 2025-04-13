@@ -101,21 +101,57 @@ func pingServerByCMD(server *model.Server) {
 	server.Tested = true
 }
 
+// 预处理服务器列表，确保每个运营商+省份组合只有一个服务器
+func preprocessServers(servers []*model.Server) []*model.Server {
+	// 使用map来跟踪每个运营商+省份组合
+	uniqueMap := make(map[string]*model.Server)
+	for _, server := range servers {
+		// 提取运营商
+		var isp string
+		if len(server.Name) >= 2 {
+			isp = server.Name[:2]
+		} else {
+			isp = "未知"
+		}
+		// 提取省份
+		var province string
+		if len(server.Name) > 2 {
+			province = server.Name[2:]
+		} else {
+			province = "未知"
+		}
+		// 生成唯一键
+		key := isp + "_" + province
+		// 根据来源类型优先级排序添加
+		if _, exists := uniqueMap[key]; !exists {
+			// 如果不存在，直接添加
+			uniqueMap[key] = server
+		} else {
+			// 如果已存在，则根据来源类型决定是否替换
+			existingType := uniqueMap[key].SourceType
+			newType := server.SourceType
+			// 优先级: icmp > net > cn
+			if (newType == "icmp" && (existingType == "net" || existingType == "cn")) ||
+				(newType == "net" && existingType == "cn") {
+				uniqueMap[key] = server
+			}
+		}
+	}
+	// 将去重后的服务器转换回切片
+	var uniqueServers []*model.Server
+	for _, server := range uniqueMap {
+		uniqueServers = append(uniqueServers, server)
+	}
+	return uniqueServers
+}
+
 // 使用有限并发工作池执行ping测试
 func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*model.Server {
+	// 先预处理服务器列表，确保每个运营商+省份组合只有一个服务器
+	uniqueServers := preprocessServers(servers)
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
-	testedProvinces := make(map[string]bool)
-	for i := range servers {
-		var province string
-		if len(servers[i].Name) > 2 {
-			province = servers[i].Name[2:]
-		} else {
-			province = servers[i].Name
-		}
-		if testedProvinces[province] {
-			continue
-		}
+	for i := range uniqueServers {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(index int) {
@@ -123,28 +159,16 @@ func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*
 				<-sem
 				wg.Done()
 			}()
-			pingServerSimple(servers[index])
-			if servers[index].Tested && servers[index].Avg.Milliseconds() > 0 {
-				var province string
-				if len(servers[index].Name) > 2 {
-					province = servers[index].Name[2:]
-				} else {
-					province = servers[index].Name
-				}
-				testedProvinces[province] = true
-			}
+			pingServerSimple(uniqueServers[index])
 		}(i)
 	}
 	wg.Wait()
 	var testedServers []*model.Server
-	for _, server := range servers {
+	for _, server := range uniqueServers {
 		if server.Tested && server.Avg.Milliseconds() > 0 {
 			testedServers = append(testedServers, server)
 		}
 	}
-	sort.Slice(testedServers, func(i, j int) bool {
-		return testedServers[i].Avg < testedServers[j].Avg
-	})
 	return testedServers
 }
 
@@ -179,14 +203,37 @@ func PingTest() string {
 	for servers := range resultChan {
 		allServers = append(allServers, servers...)
 	}
+	// 首先按运营商分组，然后按延迟排序
 	sort.Slice(allServers, func(i, j int) bool {
+		// 获取运营商名称前缀（前两个字符）
+		isp1 := allServers[i].Name[:2]
+		isp2 := allServers[j].Name[:2]
+		// 先按运营商分组
+		if isp1 != isp2 {
+			return isp1 < isp2
+		}
+		// 相同运营商则按延迟排序
 		return allServers[i].Avg < allServers[j].Avg
 	})
+	// 优化输出格式，按运营商分组显示
+	var currentISP string
 	var count int
 	for _, server := range allServers {
 		if server.Avg.Milliseconds() == 0 {
 			continue
 		}
+		// 提取运营商
+		isp := server.Name[:2]
+		// 如果运营商变了，输出分隔符
+		if isp != currentISP {
+			if currentISP != "" {
+				// 在运营商之间添加空行
+				result += "\n"
+			}
+			currentISP = isp
+			count = 0
+		}
+		// 每三个服务器换行一次
 		if count > 0 && count%3 == 0 {
 			result += "\n"
 		}

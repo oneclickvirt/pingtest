@@ -154,7 +154,41 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 		}
 	}
 	logError(fmt.Sprintf("平台: %s, 运营商: %s 解析完成，获取服务器数量: %d", platform, operator, len(servers)))
-	return servers
+	// 对同一运营商+省份的服务器进行去重
+	return deduplicateServers(servers)
+}
+
+// 对服务器进行去重
+func deduplicateServers(servers []*model.Server) []*model.Server {
+	uniqueMap := make(map[string]*model.Server)
+	for _, server := range servers {
+		// 提取省份名称
+		var province string
+		if len(server.Name) > 2 {
+			province = server.Name[2:]
+		} else {
+			province = server.Name
+		}
+		// 提取运营商
+		var isp string
+		if len(server.Name) >= 2 {
+			isp = server.Name[:2]
+		} else {
+			isp = "未知"
+		}
+		// 唯一键 = 运营商 + 省份
+		key := isp + "_" + province
+		// 如果该组合不存在，则添加
+		if _, exists := uniqueMap[key]; !exists {
+			uniqueMap[key] = server
+		}
+	}
+	// 转换回切片
+	var uniqueServers []*model.Server
+	for _, server := range uniqueMap {
+		uniqueServers = append(uniqueServers, server)
+	}
+	return uniqueServers
 }
 
 // parseIcmpTargets 解析ICMP目标数据
@@ -207,19 +241,30 @@ func getIcmpServers(operator string) []*model.Server {
 		"ct": "电信",
 	}
 	if len(icmpTargetsCache) > 0 {
+		// 使用映射确保每个省份只添加一个IP
+		provinceMap := make(map[string]bool)
 		for _, target := range icmpTargetsCache {
 			if target.IPVersion == "v4" && target.IspCode == operator {
+				// 清理省份名称
+				provinceName := cleanProvince(target.Province)
+				// 如果该省份已经处理过，跳过
+				if provinceMap[provinceName] {
+					continue
+				}
 				ips := strings.Split(target.IPs, ",")
-				for _, ip := range ips {
-					ip = strings.TrimSpace(ip)
+				if len(ips) > 0 {
+					ip := strings.TrimSpace(ips[0]) // 只取第一个IP
 					if ip != "" && net.ParseIP(ip) != nil {
-						serverName := ispNameMap[target.IspCode] + cleanProvince(target.Province)
+						serverName := ispNameMap[target.IspCode] + provinceName
 						icmpServers = append(icmpServers, &model.Server{
 							Name:       serverName,
 							IP:         ip,
 							Tested:     false,
 							SourceType: "icmp",
 						})
+
+						// 标记该省份已处理
+						provinceMap[provinceName] = true
 					}
 				}
 			}
@@ -230,22 +275,21 @@ func getIcmpServers(operator string) []*model.Server {
 }
 
 // 对服务器按省份名称进行分组
-func groupServersByProvince(servers []*model.Server) map[string][]*model.Server {
-	provinceMap := make(map[string][]*model.Server)
-	for _, server := range servers {
-		// 提取省份名称（假设名称格式为"运营商+省份"）
-		var province string
-		if len(server.Name) > 2 {
-			province = server.Name[2:] // 跳过运营商名称（如"移动"）
-		} else {
-			province = server.Name
-		}
-
-		// 将服务器添加到对应省份的列表中
-		provinceMap[province] = append(provinceMap[province], server)
-	}
-	return provinceMap
-}
+// func groupServersByProvince(servers []*model.Server) map[string][]*model.Server {
+// 	provinceMap := make(map[string][]*model.Server)
+// 	for _, server := range servers {
+// 		// 提取省份名称（假设名称格式为"运营商+省份"）
+// 		var province string
+// 		if len(server.Name) > 2 {
+// 			province = server.Name[2:] // 跳过运营商名称（如"移动"）
+// 		} else {
+// 			province = server.Name
+// 		}
+// 		// 将服务器添加到对应省份的列表中
+// 		provinceMap[province] = append(provinceMap[province], server)
+// 	}
+// 	return provinceMap
+// }
 
 func getServers(operator string) []*model.Server {
 	netList := []string{model.NetCMCC, model.NetCT, model.NetCU}
@@ -298,28 +342,54 @@ func getServers(operator string) []*model.Server {
 	for data := range dataCh {
 		servers = append(servers, data...)
 	}
-	// 按省份对服务器进行分组
-	provinceMap := groupServersByProvince(servers)
-	// 按照一致的顺序整理服务器列表
+	// 最终去重，确保每个运营商+省份组合只有一个服务器
+	uniqueMap := make(map[string]*model.Server)
+	for _, server := range servers {
+		// 提取省份
+		var province string
+		if len(server.Name) > 2 {
+			province = server.Name[2:]
+		} else {
+			province = server.Name
+		}
+		// 提取运营商
+		var isp string
+		if len(server.Name) >= 2 {
+			isp = server.Name[:2]
+		} else {
+			isp = "未知"
+		}
+		// 创建唯一键
+		key := isp + "_" + province
+		// 根据来源优先级决定是否替换
+		if existing, exists := uniqueMap[key]; !exists {
+			// 如果不存在，直接添加
+			uniqueMap[key] = server
+		} else {
+			// 如果已存在，根据来源类型决定是否替换
+			// 优先级: icmp > net > cn
+			if (server.SourceType == "icmp" && (existing.SourceType == "net" || existing.SourceType == "cn")) ||
+				(server.SourceType == "net" && existing.SourceType == "cn") {
+				uniqueMap[key] = server
+			}
+		}
+	}
+	// 转换回切片
 	var result []*model.Server
-	// 先处理所有不同的省份
-	// 为了保持一致性，我们可以按省份名称排序
-	var provinces []string
-	for province := range provinceMap {
-		provinces = append(provinces, province)
+	for _, server := range uniqueMap {
+		result = append(result, server)
 	}
-	sort.Strings(provinces)
-	// 对每个省份，先添加ICMP服务器，然后是net，最后是cn
-	for _, province := range provinces {
-		provinceServers := provinceMap[province]
-		// 按照来源类型排序
-		sort.SliceStable(provinceServers, func(i, j int) bool {
-			sources := map[string]int{"icmp": 0, "net": 1, "cn": 2}
-			return sources[provinceServers[i].SourceType] < sources[provinceServers[j].SourceType]
-		})
-		// 添加到最终结果
-		result = append(result, provinceServers...)
-	}
+	// 按照省份名称排序，确保稳定的输出顺序
+	sort.Slice(result, func(i, j int) bool {
+		var province1, province2 string
+		if len(result[i].Name) > 2 {
+			province1 = result[i].Name[2:]
+		}
+		if len(result[j].Name) > 2 {
+			province2 = result[j].Name[2:]
+		}
+		return province1 < province2
+	})
 	logError(fmt.Sprintf("%s 运营商获取服务器完成，共整理 %d 个服务器", operator, len(result)))
 	return result
 }
