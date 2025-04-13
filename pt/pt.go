@@ -56,12 +56,12 @@ func pingServerSimple(server *model.Server) {
 	} else {
 		pingServerByCMD(server)
 	}
+	if server.Tested {
+		logError(fmt.Sprintf("Ping %s (%s) 成功，延迟: %dms", server.Name, server.IP, server.Avg.Milliseconds()))
+	} else {
+		logError(fmt.Sprintf("Ping %s (%s) 失败", server.Name, server.IP))
+	}
 }
-
-// func pingServer(server *model.Server, wg *sync.WaitGroup) {
-// 	defer wg.Done()
-// 	pingServerSimple(server)
-// }
 
 func pingServerByCMD(server *model.Server) {
 	if model.EnableLoger {

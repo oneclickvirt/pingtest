@@ -49,14 +49,14 @@ func getData(endpoint string) string {
 			b, err := io.ReadAll(resp.Body)
 			if err == nil {
 				if strings.Contains(string(b), "error") {
+					logError(fmt.Sprintf("URL %s 返回错误响应", url))
 					continue
 				}
+				logError(fmt.Sprintf("成功从 %s 获取数据", url))
 				return string(b)
 			}
 		}
-		if model.EnableLoger {
-			Logger.Info(err.Error())
-		}
+		logError(fmt.Sprintf("获取 %s 失败: %v", url, err))
 	}
 	return ""
 }
@@ -72,6 +72,7 @@ func resolveIP(name string) string {
 	if len(ips) > 0 {
 		return ips[0].String()
 	}
+	logError(fmt.Sprintf("域名 %s 无法解析到IP地址", name))
 	return ""
 }
 
@@ -148,12 +149,11 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 					SourceType: "cn",
 				})
 			} else {
-				if model.EnableLoger {
-					Logger.Info(fmt.Sprintf("CSV 数据字段不足 (cn): %d", len(record)))
-				}
+				logError(fmt.Sprintf("CSV 数据字段不足 (cn): %d", len(record)))
 			}
 		}
 	}
+	logError(fmt.Sprintf("平台: %s, 运营商: %s 解析完成，获取服务器数量: %d", platform, operator, len(servers)))
 	return servers
 }
 
@@ -168,9 +168,7 @@ func parseIcmpTargets(jsonData string) []model.IcmpTarget {
 	var targets []model.IcmpTarget
 	err := json.Unmarshal([]byte(jsonData), &targets)
 	if err != nil {
-		if model.EnableLoger {
-			Logger.Error(fmt.Sprintf("Failed to parse ICMP targets: %v", err))
-		}
+		logError(fmt.Sprintf("Failed to parse ICMP targets: %v", err))
 		return nil
 	}
 	return targets
@@ -185,6 +183,7 @@ func loadIcmpTargets() {
 		if icmpData != "" {
 			icmpTargetsCache = parseIcmpTargets(icmpData)
 			icmpTargetsInitialized = true
+			logError(fmt.Sprintf("ICMP 目标数据初始化完成，共 %d 个目标", len(icmpTargetsCache)))
 		}
 	}
 }
@@ -222,6 +221,7 @@ func getIcmpServers(operator string) []*model.Server {
 			}
 		}
 	}
+	logError(fmt.Sprintf("获取 ICMP 服务器完成，共 %d 个服务器", len(icmpServers)))
 	return icmpServers
 }
 
@@ -316,5 +316,6 @@ func getServers(operator string) []*model.Server {
 		// 添加到最终结果
 		result = append(result, provinceServers...)
 	}
+	logError(fmt.Sprintf("%s 运营商获取服务器完成，共整理 %d 个服务器", operator, len(result)))
 	return result
 }
