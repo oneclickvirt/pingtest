@@ -25,25 +25,18 @@ func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync() // 确保在函数结束时冲刷日志
 	}
-	
 	pinger, err := probing.NewPinger(server.IP)
 	if err != nil {
-		if Logger != nil {
-			Logger.Info("cannot create pinger: " + err.Error())
-		}
+		logError("cannot create pinger: " + err.Error())
 		return
 	}
-
 	pinger.Count = pingCount
 	pinger.Timeout = timeout
 	err = pinger.Run()
 	if err != nil {
-		if Logger != nil {
-			Logger.Info("ping failed: " + err.Error())
-		}
+		logError("ping failed: " + err.Error())
 		return
 	}
-
 	stats := pinger.Statistics()
 	if stats.PacketsRecv > 0 {
 		server.Avg = stats.AvgRtt
@@ -68,24 +61,17 @@ func pingServerByCMD(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	
 	// 执行 ping 命令
 	cmd := exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		if Logger != nil {
-			Logger.Info("cannot ping: " + err.Error())
-		}
+		logError("cannot ping: " + err.Error())
 		return
 	}
-	if Logger != nil {
-		Logger.Info(string(output))
-	}
+	logError(string(output))
 	// 解析输出结果
 	if !strings.Contains(string(output), "time=") {
-		if Logger != nil {
-			Logger.Info("ping failed without time=")
-		}
+		logError("ping failed without time=")
 		return
 	}
 	var avgTime float64
@@ -96,9 +82,7 @@ func pingServerByCMD(server *model.Server) {
 			if len(matches) >= 2 {
 				avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
 				if err != nil {
-					if Logger != nil {
-						Logger.Info("cannot parse avgTime: " + err.Error())
-					}
+					logError("cannot parse avgTime: " + err.Error())
 					return
 				}
 				break
@@ -113,12 +97,10 @@ func PingTest() string {
 	if model.EnableLoger {
 		InitLogger()
 	}
-
 	var result string
 	servers1 := getServers("cu")
 	servers2 := getServers("ct")
 	servers3 := getServers("cmcc")
-
 	process := func(servers []*model.Server) []*model.Server {
 		var wg sync.WaitGroup
 		for i := range servers {
@@ -131,11 +113,9 @@ func PingTest() string {
 		})
 		return servers
 	}
-
 	var allServers []*model.Server
 	var wga sync.WaitGroup
 	wga.Add(3) // 分别为每个服务器组处理
-
 	go func() {
 		defer wga.Done() // 确保 Done() 调用
 		servers1 = process(servers1)
@@ -148,13 +128,10 @@ func PingTest() string {
 		defer wga.Done()
 		servers3 = process(servers3)
 	}()
-	
 	wga.Wait() // 确保所有 goroutine 完成
-
 	allServers = append(allServers, servers1...)
 	allServers = append(allServers, servers2...)
 	allServers = append(allServers, servers3...)
-
 	// 输出结果
 	var count int
 	for _, server := range allServers {
@@ -174,10 +151,4 @@ func PingTest() string {
 		result += fmt.Sprintf("%s%s%4s | ", name, strings.Repeat(" ", padding), avgStr)
 	}
 	return result
-}
-
-func logError(msg string) {
-	if model.EnableLoger && Logger != nil {
-		Logger.Info(msg)
-	}
 }
