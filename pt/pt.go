@@ -23,7 +23,7 @@ const (
 
 func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
-		defer Logger.Sync() // 确保在函数结束时冲刷日志
+		defer Logger.Sync()
 	}
 	pinger, err := probing.NewPinger(server.IP)
 	if err != nil {
@@ -46,13 +46,13 @@ func pingServerByGolang(server *model.Server) {
 }
 
 func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	defer wg.Done() // 确保 Done() 在函数返回时调用
+	defer wg.Done()
 	cmd := exec.Command("sudo", "ping", "-h")
 	output, err := cmd.CombinedOutput()
 	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
-		pingServerByGolang(server) // 此时无需传递 WaitGroup
+		pingServerByGolang(server)
 	} else {
-		pingServerByCMD(server) // 传递相同的方式
+		pingServerByCMD(server)
 	}
 }
 
@@ -93,7 +93,6 @@ func pingServerByCMD(server *model.Server) {
 }
 
 func PingTest() string {
-	// 确保 Logger 初始化
 	if model.EnableLoger {
 		InitLogger()
 	}
@@ -107,7 +106,7 @@ func PingTest() string {
 			wg.Add(1)
 			go pingServer(servers[i], &wg)
 		}
-		wg.Wait() // 确保所有的 pingServer 完成
+		wg.Wait()
 		sort.Slice(servers, func(i, j int) bool {
 			return servers[i].Avg < servers[j].Avg
 		})
@@ -115,9 +114,9 @@ func PingTest() string {
 	}
 	var allServers []*model.Server
 	var wga sync.WaitGroup
-	wga.Add(3) // 分别为每个服务器组处理
+	wga.Add(3)
 	go func() {
-		defer wga.Done() // 确保 Done() 调用
+		defer wga.Done()
 		servers1 = process(servers1)
 	}()
 	go func() {
@@ -128,11 +127,10 @@ func PingTest() string {
 		defer wga.Done()
 		servers3 = process(servers3)
 	}()
-	wga.Wait() // 确保所有 goroutine 完成
+	wga.Wait()
 	allServers = append(allServers, servers1...)
 	allServers = append(allServers, servers2...)
 	allServers = append(allServers, servers3...)
-	// 输出结果
 	var count int
 	for _, server := range allServers {
 		if server.Avg.Milliseconds() == 0 {

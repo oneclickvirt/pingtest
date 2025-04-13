@@ -25,8 +25,8 @@ var (
 type Server struct {
 	Name string
 	IP   string
-	Port string
-	Avg  time.Duration
+	// Port string
+	Avg time.Duration
 }
 
 type IcmpTarget struct {

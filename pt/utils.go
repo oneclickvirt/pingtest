@@ -108,7 +108,7 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 				servers = append(servers, &model.Server{
 					Name: head + record[3],
 					IP:   record[4],
-					Port: record[6],
+					// Port: record[6],
 				})
 			} else {
 				if model.EnableLoger {
@@ -142,7 +142,7 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 				servers = append(servers, &model.Server{
 					Name: name,
 					IP:   ip,
-					Port: parts[1],
+					// Port: parts[1],
 				})
 			} else {
 				if model.EnableLoger {
@@ -211,7 +211,7 @@ func getIcmpServers(operator string) []*model.Server {
 						icmpServers = append(icmpServers, &model.Server{
 							Name: serverName,
 							IP:   ip,
-							Port: "80", // 默认使用80端口
+							// Port: "80",
 						})
 					}
 				}
@@ -227,7 +227,6 @@ func getServers(operator string) []*model.Server {
 	var servers []*model.Server
 	var wg sync.WaitGroup
 	dataCh := make(chan []*model.Server, 2)
-	// 定义一个函数来获取数据并解析
 	fetchData := func(data string, dataType, operator string) {
 		defer wg.Done()
 		if data != "" {
@@ -246,11 +245,9 @@ func getServers(operator string) []*model.Server {
 	case "cu":
 		ispCode = "cu"
 	}
-	// 加载ICMP目标数据（仅在第一次调用时获取）
 	if !icmpTargetsInitialized {
 		loadIcmpTargets()
 	}
-	// 获取对应运营商的ICMP服务器
 	icmpServers := getIcmpServers(ispCode)
 	// 获取其他两种来源的数据
 	wg.Add(2)
