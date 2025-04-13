@@ -16,6 +16,12 @@ import (
 	"github.com/oneclickvirt/pingtest/model"
 )
 
+var (
+	icmpTargetsCache       []model.IcmpTarget
+	icmpTargetsMutex       sync.Mutex
+	icmpTargetsInitialized bool
+)
+
 func logError(msg string) {
 	if model.EnableLoger && Logger != nil {
 		Logger.Info(msg)
@@ -88,7 +94,7 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 	}
 	var head string
 	switch operator {
-	case "cmccc":
+	case "cmcc":
 		head = "移动"
 	case "ct":
 		head = "电信"
@@ -148,108 +154,6 @@ func parseCSVData(data, platform, operator string) []*model.Server {
 	return servers
 }
 
-func getServers(operator string) []*model.Server {
-	netList := []string{model.NetCMCC, model.NetCT, model.NetCU}
-	cnList := []string{model.CnCMCC, model.CnCT, model.CnCU}
-	var servers []*model.Server
-	var wg sync.WaitGroup
-	dataCh := make(chan []*model.Server, 3) // 修改为3，因为我们增加了一个数据源
-	// 定义一个函数来获取数据并解析
-	fetchData := func(data string, dataType, operator string) {
-		defer wg.Done()
-		if data != "" {
-			parsedData := parseCSVData(data, dataType, operator)
-			dataCh <- parsedData
-		}
-	}
-	fetchIcmpData := func(operator string) {
-		defer wg.Done()
-		icmpData := getData(model.IcmpTargets)
-		if icmpData != "" {
-			parsedData := parseIcmpTargets(icmpData)
-			var icmpServers []*model.Server
-			// 运营商映射
-			ispCodeMap := map[string]string{
-				"cm": "cmcc", // 移动
-				"cu": "cu",   // 联通
-				"ct": "ct",   // 电信
-			}
-			// 运营商名称映射
-			ispNameMap := map[string]string{
-				"cm": "移动",
-				"cu": "联通",
-				"ct": "电信",
-			}
-			// 检查当前请求的运营商是否与ICMP目标中的运营商匹配
-			targetOperator := ispCodeMap[operator]
-			if targetOperator == "" {
-				dataCh <- icmpServers
-				return
-			}
-			for _, target := range parsedData {
-				// 只处理 IPv4 版本的地址且运营商匹配的条目
-				if target.IPVersion == "v4" && target.IspCode == operator {
-					ips := strings.Split(target.IPs, ",")
-					for _, ip := range ips {
-						ip = strings.TrimSpace(ip)
-						if ip != "" {
-							serverName := ispNameMap[target.IspCode] + target.Province
-							icmpServers = append(icmpServers, &model.Server{
-								Name: serverName,
-								IP:   ip,
-								Port: "80", // 默认使用80端口
-							})
-						}
-					}
-				}
-			}
-			dataCh <- icmpServers
-		} else {
-			dataCh <- []*model.Server{}
-		}
-	}
-	appendData := func(data1, data2, operator string) {
-		wg.Add(3) // 增加到3，因为我们增加了一个数据源
-		go fetchData(data1, "net", operator)
-		go fetchData(data2, "cn", operator)
-		go fetchIcmpData(operator)
-	}
-	switch operator {
-	case "cmcc":
-		appendData(getData(netList[0]), getData(cnList[0]), "cm") // 注意这里传递"cm"给ICMP数据
-	case "ct":
-		appendData(getData(netList[1]), getData(cnList[1]), "ct")
-	case "cu":
-		appendData(getData(netList[2]), getData(cnList[2]), "cu")
-	}
-	go func() {
-		wg.Wait()
-		close(dataCh)
-	}()
-	for data := range dataCh {
-		servers = append(servers, data...)
-	}
-	// 去重IP
-	uniqueServers := make(map[string]*model.Server)
-	for _, server := range servers {
-		uniqueServers[server.IP] = server
-	}
-	servers = []*model.Server{}
-	for _, server := range uniqueServers {
-		servers = append(servers, server)
-	}
-	// 去重地址
-	uniqueServers = make(map[string]*model.Server)
-	for _, server := range servers {
-		uniqueServers[server.Name] = server
-	}
-	servers = []*model.Server{}
-	for _, server := range uniqueServers {
-		servers = append(servers, server)
-	}
-	return servers
-}
-
 // parseIcmpTargets 解析ICMP目标数据
 func parseIcmpTargets(jsonData string) []model.IcmpTarget {
 	// 确保JSON数据格式正确，如果返回的是数组，需要添加[和]
@@ -267,4 +171,130 @@ func parseIcmpTargets(jsonData string) []model.IcmpTarget {
 		return nil
 	}
 	return targets
+}
+
+// 加载ICMP目标数据，只在第一次调用时获取数据
+func loadIcmpTargets() {
+	icmpTargetsMutex.Lock()
+	defer icmpTargetsMutex.Unlock()
+	if !icmpTargetsInitialized {
+		icmpData := getData(model.IcmpTargets)
+		if icmpData != "" {
+			icmpTargetsCache = parseIcmpTargets(icmpData)
+			icmpTargetsInitialized = true
+		}
+	}
+}
+
+// 获取ICMP目标服务器
+func getIcmpServers(operator string) []*model.Server {
+	// 确保ICMP目标数据已加载
+	if !icmpTargetsInitialized {
+		loadIcmpTargets()
+	}
+	var icmpServers []*model.Server
+	// 运营商名称映射
+	ispNameMap := map[string]string{
+		"cm": "移动",
+		"cu": "联通",
+		"ct": "电信",
+	}
+	if len(icmpTargetsCache) > 0 {
+		for _, target := range icmpTargetsCache {
+			// 只处理 IPv4 版本的地址且运营商匹配的条目
+			if target.IPVersion == "v4" && target.IspCode == operator {
+				ips := strings.Split(target.IPs, ",")
+				for _, ip := range ips {
+					ip = strings.TrimSpace(ip)
+					if ip != "" && net.ParseIP(ip) != nil { // 确保IP有效
+						serverName := ispNameMap[target.IspCode] + target.Province
+						icmpServers = append(icmpServers, &model.Server{
+							Name: serverName,
+							IP:   ip,
+							Port: "80", // 默认使用80端口
+						})
+					}
+				}
+			}
+		}
+	}
+	return icmpServers
+}
+
+func getServers(operator string) []*model.Server {
+	netList := []string{model.NetCMCC, model.NetCT, model.NetCU}
+	cnList := []string{model.CnCMCC, model.CnCT, model.CnCU}
+	var servers []*model.Server
+	var wg sync.WaitGroup
+	dataCh := make(chan []*model.Server, 2)
+	// 定义一个函数来获取数据并解析
+	fetchData := func(data string, dataType, operator string) {
+		defer wg.Done()
+		if data != "" {
+			parsedData := parseCSVData(data, dataType, operator)
+			dataCh <- parsedData
+		} else {
+			dataCh <- []*model.Server{}
+		}
+	}
+	var ispCode string
+	switch operator {
+	case "cmcc":
+		ispCode = "cm"
+	case "ct":
+		ispCode = "ct"
+	case "cu":
+		ispCode = "cu"
+	}
+	// 加载ICMP目标数据（仅在第一次调用时获取）
+	if !icmpTargetsInitialized {
+		loadIcmpTargets()
+	}
+	// 获取对应运营商的ICMP服务器
+	icmpServers := getIcmpServers(ispCode)
+	// 获取其他两种来源的数据
+	wg.Add(2)
+	go fetchData(getData(netList[0]), "net", operator)
+	go fetchData(getData(cnList[0]), "cn", operator)
+	go func() {
+		wg.Wait()
+		close(dataCh)
+	}()
+	// 收集从通道中获取的数据
+	for data := range dataCh {
+		servers = append(servers, data...)
+	}
+	// 添加ICMP服务器（不需要通过通道，因为已经同步获取）
+	servers = append(servers, icmpServers...)
+	// 去重：先按IP去重
+	uniqueIPServers := make(map[string]*model.Server)
+	for _, server := range servers {
+		if server == nil || server.IP == "" {
+			continue
+		}
+		// 如果IP已存在，但当前服务器名称更好（非空），则替换
+		existing, exists := uniqueIPServers[server.IP]
+		if !exists || (server.Name != "" && existing.Name == "") {
+			uniqueIPServers[server.IP] = server
+		}
+	}
+	// 将去重后的服务器重新收集到数组
+	servers = []*model.Server{}
+	for _, server := range uniqueIPServers {
+		servers = append(servers, server)
+	}
+	// 按名称去重（保留不同名称的服务器）
+	uniqueNameServers := make(map[string]*model.Server)
+	for _, server := range servers {
+		if server.Name == "" {
+			continue
+		}
+		uniqueNameServers[server.Name] = server
+	}
+	// 最终结果
+	result := []*model.Server{}
+	for _, server := range uniqueNameServers {
+		result = append(result, server)
+	}
+	return result
 }
