@@ -21,6 +21,7 @@ const (
 	timeout          = 3 * time.Second
 )
 
+// pingServerByGolang 使用golang的ping库进行测试
 func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync()
@@ -46,8 +47,8 @@ func pingServerByGolang(server *model.Server) {
 	}
 }
 
-func pingServer(server *model.Server, wg *sync.WaitGroup) {
-	defer wg.Done()
+// pingServerSimple 简化版的ping函数，不需要WaitGroup
+func pingServerSimple(server *model.Server) {
 	cmd := exec.Command("sudo", "ping", "-h")
 	output, err := cmd.CombinedOutput()
 	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
@@ -56,6 +57,11 @@ func pingServer(server *model.Server, wg *sync.WaitGroup) {
 		pingServerByCMD(server)
 	}
 }
+
+// func pingServer(server *model.Server, wg *sync.WaitGroup) {
+// 	defer wg.Done()
+// 	pingServerSimple(server)
+// }
 
 func pingServerByCMD(server *model.Server) {
 	if model.EnableLoger {
@@ -68,7 +74,9 @@ func pingServerByCMD(server *model.Server) {
 		logError("cannot ping: " + err.Error())
 		return
 	}
-	logError(string(output))
+	if model.EnableLoger {
+		logError(string(output))
+	}
 	// 解析输出结果
 	if !strings.Contains(string(output), "time=") {
 		logError("ping failed without time=")
@@ -96,30 +104,26 @@ func pingServerByCMD(server *model.Server) {
 // 使用有限并发工作池执行ping测试
 func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*model.Server {
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, concurrency) // 信号量控制并发
-	// 创建已测试省份的映射，避免重复测试同一省份
+	sem := make(chan struct{}, concurrency)
 	testedProvinces := make(map[string]bool)
 	for i := range servers {
-		// 提取省份名称（假设名称格式为"运营商+省份"）
 		var province string
 		if len(servers[i].Name) > 2 {
-			province = servers[i].Name[2:] // 跳过运营商名称（如"移动"）
+			province = servers[i].Name[2:]
 		} else {
 			province = servers[i].Name
 		}
-		// 如果该省份已经测试通过，跳过此服务器
 		if testedProvinces[province] {
 			continue
 		}
 		wg.Add(1)
-		sem <- struct{}{} // 获取信号量
+		sem <- struct{}{}
 		go func(index int) {
 			defer func() {
-				<-sem // 释放信号量
+				<-sem
 				wg.Done()
 			}()
-			pingServer(servers[index], &sync.WaitGroup{})
-			// 如果测试成功，标记该省份已测试
+			pingServerSimple(servers[index])
 			if servers[index].Tested && servers[index].Avg.Milliseconds() > 0 {
 				var province string
 				if len(servers[index].Name) > 2 {
@@ -131,15 +135,13 @@ func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*
 			}
 		}(i)
 	}
-	wg.Wait() // 等待所有任务完成
-	// 只保留成功测试的服务器
+	wg.Wait()
 	var testedServers []*model.Server
 	for _, server := range servers {
 		if server.Tested && server.Avg.Milliseconds() > 0 {
 			testedServers = append(testedServers, server)
 		}
 	}
-	// 对测试过的服务器按延迟排序
 	sort.Slice(testedServers, func(i, j int) bool {
 		return testedServers[i].Avg < testedServers[j].Avg
 	})
@@ -151,36 +153,35 @@ func PingTest() string {
 		InitLogger()
 	}
 	var result string
-	// 分别获取各运营商的服务器列表
 	servers1 := getServers("cu")
 	servers2 := getServers("ct")
 	servers3 := getServers("cmcc")
-	// 使用可配置的并发数进行测试
 	var allServers []*model.Server
+	resultChan := make(chan []*model.Server, 3)
 	var wga sync.WaitGroup
 	wga.Add(3)
-	// 为每个运营商分配独立的goroutine进行处理
 	go func() {
 		defer wga.Done()
-		testedServers := processWithLimitedConcurrency(servers1, model.MaxConcurrency)
-		allServers = append(allServers, testedServers...)
+		resultChan <- processWithLimitedConcurrency(servers1, model.MaxConcurrency)
 	}()
 	go func() {
 		defer wga.Done()
-		testedServers := processWithLimitedConcurrency(servers2, model.MaxConcurrency)
-		allServers = append(allServers, testedServers...)
+		resultChan <- processWithLimitedConcurrency(servers2, model.MaxConcurrency)
 	}()
 	go func() {
 		defer wga.Done()
-		testedServers := processWithLimitedConcurrency(servers3, model.MaxConcurrency)
-		allServers = append(allServers, testedServers...)
+		resultChan <- processWithLimitedConcurrency(servers3, model.MaxConcurrency)
 	}()
-	wga.Wait()
-	// 最终排序
+	go func() {
+		wga.Wait()
+		close(resultChan)
+	}()
+	for servers := range resultChan {
+		allServers = append(allServers, servers...)
+	}
 	sort.Slice(allServers, func(i, j int) bool {
 		return allServers[i].Avg < allServers[j].Avg
 	})
-	// 格式化输出结果
 	var count int
 	for _, server := range allServers {
 		if server.Avg.Milliseconds() == 0 {
