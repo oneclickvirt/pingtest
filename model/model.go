@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const PingTestVersion = "v0.0.7"
+const PingTestVersion = "v0.0.8"
 
 var EnableLoger = false
 var MaxConcurrency = 30 // 并发量

@@ -49,7 +49,12 @@ func pingServerByGolang(server *model.Server) {
 
 // pingServerSimple 简化版的ping函数，不需要WaitGroup
 func pingServerSimple(server *model.Server) {
-	cmd := exec.Command("sudo", "ping", "-h")
+	var cmd *exec.Cmd
+	if hasRootPermission() {
+		cmd = exec.Command("sudo", "ping", "-h")
+	} else {
+		cmd = exec.Command("ping", "-h")
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil || (!strings.Contains(string(output), "Usage") && strings.Contains(string(output), "err")) {
 		pingServerByGolang(server)
@@ -68,7 +73,12 @@ func pingServerByCMD(server *model.Server) {
 		defer Logger.Sync()
 	}
 	// 执行 ping 命令
-	cmd := exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
+	var cmd *exec.Cmd
+	if hasRootPermission() {
+		cmd = exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
+	} else {
+		cmd = exec.Command("ping", "-c1", "-W3", server.IP)
+	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		logError("cannot ping: " + err.Error())
