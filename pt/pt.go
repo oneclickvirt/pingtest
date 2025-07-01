@@ -50,7 +50,9 @@ func pingServerByGolang(server *model.Server) {
 // pingServerSimple 简化版的ping函数，不需要WaitGroup
 func pingServerSimple(server *model.Server) {
 	var cmd *exec.Cmd
-	if hasRootPermission() {
+	rootPerm := hasRootPermission()
+	logError(fmt.Sprintf("Root permission check: %v", rootPerm))
+	if rootPerm {
 		cmd = exec.Command("sudo", "ping", "-h")
 	} else {
 		cmd = exec.Command("ping", "-h")
@@ -74,7 +76,8 @@ func pingServerByCMD(server *model.Server) {
 	}
 	// 执行 ping 命令
 	var cmd *exec.Cmd
-	if hasRootPermission() {
+	logError(fmt.Sprintf("Root permission check: %v", rootPerm))  
+	if rootPerm {
 		cmd = exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	} else {
 		cmd = exec.Command("ping", "-c1", "-W3", server.IP)
