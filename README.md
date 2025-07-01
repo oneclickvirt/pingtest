@@ -59,5 +59,5 @@ rm -rf /usr/bin/pt
 ## 在Golang中使用
 
 ```
-go get github.com/oneclickvirt/pingtest@v0.0.8-20250701115257
+go get github.com/oneclickvirt/pingtest@v0.0.8-20250701125637
 ```
