@@ -76,6 +76,7 @@ func pingServerByCMD(server *model.Server) {
 	}
 	// 执行 ping 命令
 	var cmd *exec.Cmd
+	rootPerm := hasRootPermission()
 	logError(fmt.Sprintf("Root permission check: %v", rootPerm))  
 	if rootPerm {
 		cmd = exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
