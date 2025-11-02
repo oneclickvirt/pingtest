@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mattn/go-runewidth"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
 	probing "github.com/prometheus-community/pro-bing"
@@ -166,8 +167,8 @@ func TelegramDCTest() string {
 		avgStr := fmt.Sprintf("%4d", dc.Avg.Milliseconds())
 		// 使用 "DC名称-位置" 作为显示名称
 		name := fmt.Sprintf("%s-%s", dc.Name, dc.Location)
-		// 计算需要的填充空格，使名称列宽度为35
-		padding := 35 - len(name)
+		// 计算需要的填充空格，使名称列宽度为20
+		padding := 20 - runewidth.StringWidth(name)
 		if padding < 0 {
 			padding = 0
 		}

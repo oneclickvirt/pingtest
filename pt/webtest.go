@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mattn/go-runewidth"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
 )
@@ -131,7 +132,7 @@ func WebsiteTest() string {
 		avgStr := fmt.Sprintf("%4d", site.Avg.Milliseconds())
 		name := site.Name
 		// 计算需要的填充空格，使名称列宽度为20
-		padding := 20 - len(name)
+		padding := 20 - runewidth.StringWidth(name)
 		if padding < 0 {
 			padding = 0
 		}

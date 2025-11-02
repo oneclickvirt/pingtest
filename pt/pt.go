@@ -278,7 +278,7 @@ func PingTest() string {
 		count++
 		avgStr := fmt.Sprintf("%4d", server.Avg.Milliseconds())
 		name := server.Name
-		padding := 16 - runewidth.StringWidth(name)
+		padding := 20 - runewidth.StringWidth(name)
 		if padding < 0 {
 			padding = 0
 		}
