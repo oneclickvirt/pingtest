@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
 )
 
@@ -93,109 +94,36 @@ func WebsiteTest() string {
 	}
 	wg.Wait()
 	
-	// 按分类分组网站
-	categoryMap := make(map[string][]model.Website)
+	// 收集所有测试成功的网站
+	var allSites []model.Website
 	for _, site := range websites {
-		if site.Tested {
-			categoryMap[site.Category] = append(categoryMap[site.Category], site)
+		if site.Tested && site.Avg.Milliseconds() > 0 {
+			allSites = append(allSites, site)
 		}
 	}
 	
-	// 对每个分类内的网站按延迟排序
-	for category := range categoryMap {
-		sort.Slice(categoryMap[category], func(i, j int) bool {
-			return categoryMap[category][i].Avg < categoryMap[category][j].Avg
-		})
-	}
+	// 按延迟从小到大排序
+	sort.Slice(allSites, func(i, j int) bool {
+		return allSites[i].Avg < allSites[j].Avg
+	})
 	
 	// 格式化输出
 	var result strings.Builder
+	result.WriteString("流行网站连通性测试\n\n")
 	
-	// 定义分类顺序和中文名称
-	categoryOrder := []struct {
-		key  string
-		name string
-	}{
-		{"search", "搜索引擎"},
-		{"social", "社交媒体"},
-		{"video", "视频流媒体"},
-		{"ai", "AI 服务"},
-		{"dev", "开发平台"},
-		{"cloud", "云服务"},
-		{"shopping", "电商平台"},
-		{"gaming", "游戏平台"},
-		{"news", "新闻媒体"},
-		{"tech", "科技公司"},
-		{"tool", "工具网站"},
-	}
-	
-	// 统计信息
-	totalTested := 0
-	totalSuccess := 0
-	
-	for _, cat := range categoryOrder {
-		sites, exists := categoryMap[cat.key]
-		if !exists || len(sites) == 0 {
-			continue
+	for _, site := range allSites {
+		latency := site.Avg.Milliseconds()
+		var status string
+		if latency < 100 {
+			status = "[极快]"
+		} else if latency < 300 {
+			status = "[良好]"
+		} else if latency < 1000 {
+			status = "[一般]"
+		} else {
+			status = "[较慢]"
 		}
-		
-		result.WriteString(fmt.Sprintf("%s\n", cat.name))
-		result.WriteString(strings.Repeat("-", 70) + "\n")
-		
-		for _, site := range sites {
-			totalTested++
-			var status string
-			if site.Tested && site.Avg.Milliseconds() > 0 {
-				totalSuccess++
-				latency := site.Avg.Milliseconds()
-				// 根据延迟添加颜色标记
-				if latency < 100 {
-					status = fmt.Sprintf("✓ %4d ms  [极快]", latency)
-				} else if latency < 300 {
-					status = fmt.Sprintf("✓ %4d ms  [良好]", latency)
-				} else if latency < 1000 {
-					status = fmt.Sprintf("✓ %4d ms  [一般]", latency)
-				} else {
-					status = fmt.Sprintf("✓ %4d ms  [较慢]", latency)
-				}
-			} else {
-				status = "✗ 超时/失败"
-			}
-			
-			result.WriteString(fmt.Sprintf("%-20s %s\n", site.Name, status))
-		}
-		result.WriteString("\n")
-	}
-	
-	result.WriteString(strings.Repeat("=", 70) + "\n")
-	result.WriteString(fmt.Sprintf("总计: 测试 %d 个网站, 成功 %d 个, 失败 %d 个\n", 
-		totalTested, totalSuccess, totalTested-totalSuccess))
-	
-	// 找出最快的5个网站
-	var allSuccessWebsites []model.Website
-	for _, sites := range categoryMap {
-		for _, site := range sites {
-			if site.Tested && site.Avg.Milliseconds() > 0 {
-				allSuccessWebsites = append(allSuccessWebsites, site)
-			}
-		}
-	}
-	
-	if len(allSuccessWebsites) > 0 {
-		sort.Slice(allSuccessWebsites, func(i, j int) bool {
-			return allSuccessWebsites[i].Avg < allSuccessWebsites[j].Avg
-		})
-		
-		result.WriteString("\n响应最快的网站:\n")
-		count := 5
-		if len(allSuccessWebsites) < count {
-			count = len(allSuccessWebsites)
-		}
-		for i := 0; i < count; i++ {
-			site := allSuccessWebsites[i]
-			result.WriteString(fmt.Sprintf("  %d. %-20s %4d ms\n", 
-				i+1, site.Name, site.Avg.Milliseconds()))
-		}
+		result.WriteString(fmt.Sprintf("%-20s %4d ms  %s\n", site.Name, latency, status))
 	}
 	
 	return result.String()

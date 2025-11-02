@@ -129,17 +129,20 @@ func TelegramDCTest() string {
 	}
 	wg.Wait()
 	
-	// 按ID排序
+	// 按延迟从小到大排序
 	sort.Slice(datacenters, func(i, j int) bool {
-		return datacenters[i].ID < datacenters[j].ID
+		// 未测试成功的放到最后
+		if !datacenters[i].Tested || datacenters[i].Avg.Milliseconds() == 0 {
+			return false
+		}
+		if !datacenters[j].Tested || datacenters[j].Avg.Milliseconds() == 0 {
+			return true
+		}
+		return datacenters[i].Avg < datacenters[j].Avg
 	})
 	
 	// 格式化输出结果
 	var result string
-	result += "=== Telegram 数据中心连通性测试 ===\n"
-	result += fmt.Sprintf("%-5s %-30s %-18s %s\n", "DC", "位置", "IP地址", "延迟")
-	result += strings.Repeat("-", 80) + "\n"
-	
 	for _, dc := range datacenters {
 		var latency string
 		if dc.Tested && dc.Avg.Milliseconds() > 0 {
@@ -147,28 +150,7 @@ func TelegramDCTest() string {
 		} else {
 			latency = "超时/失败"
 		}
-		result += fmt.Sprintf("%-5s %-30s %-18s %s\n", dc.Name, dc.Location, dc.IP, latency)
-	}
-	
-	result += strings.Repeat("-", 80) + "\n"
-	
-	// 找出最快的数据中心
-	var fastestDC *model.TelegramDC
-	var minLatency time.Duration
-	for i := range datacenters {
-		if datacenters[i].Tested && datacenters[i].Avg.Milliseconds() > 0 {
-			if fastestDC == nil || datacenters[i].Avg < minLatency {
-				fastestDC = &datacenters[i]
-				minLatency = datacenters[i].Avg
-			}
-		}
-	}
-	
-	if fastestDC != nil {
-		result += fmt.Sprintf("\n推荐使用: %s (%s) - 延迟最低 %d ms\n", 
-			fastestDC.Name, fastestDC.Location, fastestDC.Avg.Milliseconds())
-	} else {
-		result += "\n未能检测到可用的数据中心\n"
+		result += fmt.Sprintf("%-5s %-30s %s\n", dc.Name, dc.Location, latency)
 	}
 	
 	return result
