@@ -107,24 +107,27 @@ func WebsiteTest() string {
 		return allSites[i].Avg < allSites[j].Avg
 	})
 	
-	// 格式化输出
-	var result strings.Builder
-	result.WriteString("流行网站连通性测试\n\n")
+	// 格式化输出，参考三网延迟测试的格式
+	var result string
+	result += "流行网站连通性测试\n\n"
 	
+	count := 0
 	for _, site := range allSites {
-		latency := site.Avg.Milliseconds()
-		var status string
-		if latency < 100 {
-			status = "[极快]"
-		} else if latency < 300 {
-			status = "[良好]"
-		} else if latency < 1000 {
-			status = "[一般]"
-		} else {
-			status = "[较慢]"
+		// 每三个网站换行一次
+		if count > 0 && count%3 == 0 {
+			result += "\n"
 		}
-		result.WriteString(fmt.Sprintf("%-20s %4d ms  %s\n", site.Name, latency, status))
+		count++
+		
+		avgStr := fmt.Sprintf("%4d", site.Avg.Milliseconds())
+		name := site.Name
+		// 计算需要的填充空格，使名称列宽度为20
+		padding := 20 - len(name)
+		if padding < 0 {
+			padding = 0
+		}
+		result += fmt.Sprintf("%s%s%4s | ", name, strings.Repeat(" ", padding), avgStr)
 	}
 	
-	return result.String()
+	return result
 }
