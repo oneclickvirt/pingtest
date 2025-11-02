@@ -141,16 +141,31 @@ func TelegramDCTest() string {
 		return datacenters[i].Avg < datacenters[j].Avg
 	})
 	
-	// 格式化输出结果
+	// 格式化输出结果，参考三网延迟测试的格式
 	var result string
+	result += "Telegram 数据中心连通性测试\n\n"
+	
+	count := 0
 	for _, dc := range datacenters {
-		var latency string
-		if dc.Tested && dc.Avg.Milliseconds() > 0 {
-			latency = fmt.Sprintf("%d ms", dc.Avg.Milliseconds())
-		} else {
-			latency = "超时/失败"
+		if !dc.Tested || dc.Avg.Milliseconds() == 0 {
+			continue // 跳过测试失败的
 		}
-		result += fmt.Sprintf("%-5s %-30s %s\n", dc.Name, dc.Location, latency)
+		
+		// 每三个数据中心换行一次
+		if count > 0 && count%3 == 0 {
+			result += "\n"
+		}
+		count++
+		
+		avgStr := fmt.Sprintf("%4d", dc.Avg.Milliseconds())
+		// 使用 "DC名称-位置" 作为显示名称
+		name := fmt.Sprintf("%s-%s", dc.Name, dc.Location)
+		// 计算需要的填充空格，使名称列宽度为35
+		padding := 35 - len(name)
+		if padding < 0 {
+			padding = 0
+		}
+		result += fmt.Sprintf("%s%s%4s | ", name, strings.Repeat(" ", padding), avgStr)
 	}
 	
 	return result
