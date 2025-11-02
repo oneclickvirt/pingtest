@@ -110,25 +110,37 @@ func pingTelegramDCSimple(dc *model.TelegramDC) {
 
 // TelegramDCTest 测试所有Telegram数据中心
 func TelegramDCTest() string {
+	// 添加 defer recover 防止 panic
+	defer func() {
+		if r := recover(); r != nil {
+			logError(fmt.Sprintf("TelegramDCTest panic 恢复: %v", r))
+		}
+	}()
+
 	if model.EnableLoger {
 		InitLogger()
 	}
-	
+
 	// 复制数据中心配置，避免修改原始数据
 	datacenters := make([]model.TelegramDC, len(model.TelegramDataCenters))
 	copy(datacenters, model.TelegramDataCenters)
-	
+
 	// 使用并发测试所有数据中心
 	var wg sync.WaitGroup
 	for i := range datacenters {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					logError(fmt.Sprintf("pingTelegramDCSimple panic 恢复: %v", r))
+				}
+			}()
 			pingTelegramDCSimple(&datacenters[index])
 		}(i)
 	}
 	wg.Wait()
-	
+
 	// 按延迟从小到大排序
 	sort.Slice(datacenters, func(i, j int) bool {
 		// 未测试成功的放到最后
@@ -140,23 +152,23 @@ func TelegramDCTest() string {
 		}
 		return datacenters[i].Avg < datacenters[j].Avg
 	})
-	
+
 	// 格式化输出结果，参考三网延迟测试的格式
 	var result string
 	result += "Telegram 数据中心连通性测试\n\n"
-	
+
 	count := 0
 	for _, dc := range datacenters {
 		if !dc.Tested || dc.Avg.Milliseconds() == 0 {
 			continue // 跳过测试失败的
 		}
-		
+
 		// 每三个数据中心换行一次
 		if count > 0 && count%3 == 0 {
 			result += "\n"
 		}
 		count++
-		
+
 		avgStr := fmt.Sprintf("%4d", dc.Avg.Milliseconds())
 		// 使用 "DC名称-位置" 作为显示名称
 		name := fmt.Sprintf("%s-%s", dc.Name, dc.Location)
@@ -167,6 +179,6 @@ func TelegramDCTest() string {
 		}
 		result += fmt.Sprintf("%s%s%4s | ", name, strings.Repeat(" ", padding), avgStr)
 	}
-	
+
 	return result
 }

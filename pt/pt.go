@@ -77,7 +77,7 @@ func pingServerByCMD(server *model.Server) {
 	// 执行 ping 命令
 	var cmd *exec.Cmd
 	rootPerm := hasRootPermission()
-	logError(fmt.Sprintf("Root permission check: %v", rootPerm))  
+	logError(fmt.Sprintf("Root permission check: %v", rootPerm))
 	if rootPerm {
 		cmd = exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
 	} else {
@@ -187,6 +187,13 @@ func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*
 }
 
 func PingTest() string {
+	// 添加 defer recover 防止 panic
+	defer func() {
+		if r := recover(); r != nil {
+			logError(fmt.Sprintf("PingTest panic 恢复: %v", r))
+		}
+	}()
+
 	if model.EnableLoger {
 		InitLogger()
 	}
@@ -200,14 +207,32 @@ func PingTest() string {
 	wga.Add(3)
 	go func() {
 		defer wga.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				logError(fmt.Sprintf("processWithLimitedConcurrency panic 恢复: %v", r))
+				resultChan <- []*model.Server{}
+			}
+		}()
 		resultChan <- processWithLimitedConcurrency(servers1, model.MaxConcurrency)
 	}()
 	go func() {
 		defer wga.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				logError(fmt.Sprintf("processWithLimitedConcurrency panic 恢复: %v", r))
+				resultChan <- []*model.Server{}
+			}
+		}()
 		resultChan <- processWithLimitedConcurrency(servers2, model.MaxConcurrency)
 	}()
 	go func() {
 		defer wga.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				logError(fmt.Sprintf("processWithLimitedConcurrency panic 恢复: %v", r))
+				resultChan <- []*model.Server{}
+			}
+		}()
 		resultChan <- processWithLimitedConcurrency(servers3, model.MaxConcurrency)
 	}()
 	go func() {

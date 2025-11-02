@@ -31,8 +31,15 @@ func logError(msg string) {
 
 // getData 获取目标地址的文本内容
 func getData(endpoint string) string {
+	// 添加 defer recover 防止 panic
+	defer func() {
+		if r := recover(); r != nil {
+			logError(fmt.Sprintf("getData panic 恢复: %v", r))
+		}
+	}()
+
 	client := req.C()
-	client.SetTimeout(6 * time.Second)
+	client.SetTimeout(10 * time.Second) // 增加超时时间到10秒
 	client.R().
 		SetRetryCount(2).
 		SetRetryBackoffInterval(1*time.Second, 3*time.Second).
@@ -41,23 +48,46 @@ func getData(endpoint string) string {
 		InitLogger()
 		defer Logger.Sync()
 	}
+
+	// 创建一个带超时的 context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	for _, baseUrl := range model.CdnList {
-		url := baseUrl + endpoint
-		resp, err := client.R().Get(url)
-		if err == nil {
-			defer resp.Body.Close()
-			b, err := io.ReadAll(resp.Body)
-			if err == nil {
-				if strings.Contains(string(b), "error") {
-					logError(fmt.Sprintf("URL %s 返回错误响应", url))
-					continue
-				}
-				logError(fmt.Sprintf("成功从 %s 获取数据", url))
-				return string(b)
-			}
+		// 检查 context 是否已超时
+		select {
+		case <-ctx.Done():
+			logError("getData 总体超时")
+			return ""
+		default:
 		}
-		logError(fmt.Sprintf("获取 %s 失败: %v", url, err))
+
+		url := baseUrl + endpoint
+		resp, err := client.R().SetContext(ctx).Get(url)
+		if err != nil {
+			logError(fmt.Sprintf("获取 %s 失败: %v", url, err))
+			continue
+		}
+
+		// 确保响应体被关闭
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+			b, readErr := io.ReadAll(resp.Body)
+			if readErr != nil {
+				logError(fmt.Sprintf("读取响应体失败 %s: %v", url, readErr))
+				continue
+			}
+
+			bodyStr := string(b)
+			if strings.Contains(bodyStr, "error") {
+				logError(fmt.Sprintf("URL %s 返回错误响应", url))
+				continue
+			}
+			logError(fmt.Sprintf("成功从 %s 获取数据", url))
+			return bodyStr
+		}
 	}
+	logError(fmt.Sprintf("所有 CDN 尝试失败,endpoint: %s", endpoint))
 	return ""
 }
 
@@ -292,13 +322,28 @@ func getIcmpServers(operator string) []*model.Server {
 // }
 
 func getServers(operator string) []*model.Server {
+	// 添加 defer recover 防止 panic
+	defer func() {
+		if r := recover(); r != nil {
+			logError(fmt.Sprintf("getServers panic 恢复: %v, operator: %s", r, operator))
+		}
+	}()
+
 	netList := []string{model.NetCMCC, model.NetCT, model.NetCU}
 	cnList := []string{model.CnCMCC, model.CnCT, model.CnCU}
 	var servers []*model.Server
 	var wg sync.WaitGroup
 	dataCh := make(chan []*model.Server, 3)
+
 	fetchData := func(data string, dataType, operator string) {
 		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				logError(fmt.Sprintf("fetchData panic 恢复: %v", r))
+				dataCh <- []*model.Server{}
+			}
+		}()
+
 		if data != "" {
 			parsedData := parseCSVData(data, dataType, operator)
 			dataCh <- parsedData
@@ -306,6 +351,7 @@ func getServers(operator string) []*model.Server {
 			dataCh <- []*model.Server{}
 		}
 	}
+
 	var ispCode string
 	var netIndex, cnIndex int
 	switch operator {
@@ -318,30 +364,68 @@ func getServers(operator string) []*model.Server {
 	case "cu":
 		ispCode = "cu"
 		netIndex, cnIndex = 2, 2
+	default:
+		logError(fmt.Sprintf("未知的运营商: %s", operator))
+		return []*model.Server{}
 	}
+
 	// 确保ICMP目标数据已加载
 	if !icmpTargetsInitialized {
 		loadIcmpTargets()
 	}
+
 	// 获取ICMP服务器并放入通道
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				logError(fmt.Sprintf("getIcmpServers panic 恢复: %v", r))
+				dataCh <- []*model.Server{}
+			}
+		}()
 		icmpServers := getIcmpServers(ispCode)
 		dataCh <- icmpServers
 	}()
+
 	// 获取其他两种来源的数据
 	wg.Add(2)
 	go fetchData(getData(netList[netIndex]), "net", operator)
 	go fetchData(getData(cnList[cnIndex]), "cn", operator)
+
+	// 使用超时机制等待所有 goroutine 完成
+	done := make(chan struct{})
 	go func() {
 		wg.Wait()
 		close(dataCh)
+		close(done)
 	}()
-	// 收集从通道中获取的数据
-	for data := range dataCh {
-		servers = append(servers, data...)
+
+	// 设置超时为 60 秒
+	timeout := time.After(60 * time.Second)
+
+	collecting := true
+	for collecting {
+		select {
+		case data, ok := <-dataCh:
+			if !ok {
+				collecting = false
+			} else {
+				servers = append(servers, data...)
+			}
+		case <-timeout:
+			logError(fmt.Sprintf("getServers 超时,operator: %s", operator))
+			collecting = false
+		}
 	}
+
+	// 等待清理完成或超时
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		logError("等待 goroutine 清理超时")
+	}
+
 	// 最终去重，确保每个运营商+省份组合只有一个服务器
 	uniqueMap := make(map[string]*model.Server)
 	for _, server := range servers {
