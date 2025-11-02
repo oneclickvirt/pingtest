@@ -29,6 +29,44 @@ func logError(msg string) {
 	}
 }
 
+// checkCDN 检查单个 CDN 是否可用，参考 shell 脚本的实现
+// checkCDN 检查单个 CDN 是否可用，参考 shell 脚本的实现
+// 通过访问测试 URL 并检查响应中是否包含 "success" 来验证
+func checkCDN(cdnURL string) bool {
+	client := req.C()
+	client.SetTimeout(6 * time.Second) // 与 shell 脚本的 --max-time 6 保持一致
+
+	// 测试 URL，与 shell 脚本中的 check_cdn_file 保持一致
+	testURL := cdnURL + "https://raw.githubusercontent.com/spiritLHLS/ecs/main/back/test"
+
+	resp, err := client.R().Get(testURL)
+	if err != nil {
+		logError(fmt.Sprintf("CDN 测试失败 %s: %v", cdnURL, err))
+		return false
+	}
+
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+		b, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			logError(fmt.Sprintf("读取 CDN 测试响应失败 %s: %v", cdnURL, readErr))
+			return false
+		}
+
+		bodyStr := string(b)
+		// 与 shell 脚本一致，检查响应中是否包含 "success"
+		if strings.Contains(bodyStr, "success") {
+			logError(fmt.Sprintf("CDN 可用: %s", cdnURL))
+			return true
+		} else {
+			logError(fmt.Sprintf("CDN 测试响应不包含 'success': %s", cdnURL))
+			return false
+		}
+	}
+
+	return false
+}
+
 // getData 获取目标地址的文本内容
 func getData(endpoint string) string {
 	// 添加 defer recover 防止 panic
@@ -62,6 +100,13 @@ func getData(endpoint string) string {
 		default:
 		}
 
+		// 先测试 CDN 是否可用（参考 shell 脚本实现）
+		if !checkCDN(baseUrl) {
+			logError(fmt.Sprintf("CDN 不可用，跳过: %s", baseUrl))
+			time.Sleep(500 * time.Millisecond) // 与 shell 脚本的 sleep 0.5 保持一致
+			continue
+		}
+
 		url := baseUrl + endpoint
 		resp, err := client.R().SetContext(ctx).Get(url)
 		if err != nil {
@@ -79,10 +124,6 @@ func getData(endpoint string) string {
 			}
 
 			bodyStr := string(b)
-			if strings.Contains(bodyStr, "error") {
-				logError(fmt.Sprintf("URL %s 返回错误响应", url))
-				continue
-			}
 			logError(fmt.Sprintf("成功从 %s 获取数据", url))
 			return bodyStr
 		}

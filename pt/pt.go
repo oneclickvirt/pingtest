@@ -179,9 +179,11 @@ func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*
 	wg.Wait()
 	var testedServers []*model.Server
 	for _, server := range uniqueServers {
-		if server.Tested && server.Avg.Milliseconds() > 0 {
-			testedServers = append(testedServers, server)
+		// 所有服务器都保留，失败的标记为 999ms
+		if !server.Tested || server.Avg.Milliseconds() == 0 {
+			server.Avg = 999 * time.Millisecond
 		}
+		testedServers = append(testedServers, server)
 	}
 	return testedServers
 }
@@ -258,9 +260,6 @@ func PingTest() string {
 	var currentISP string
 	var count int
 	for _, server := range allServers {
-		if server.Avg.Milliseconds() == 0 {
-			continue
-		}
 		// 提取运营商
 		isp := server.Name[:2]
 		// 如果运营商变了，输出分隔符

@@ -143,12 +143,12 @@ func TelegramDCTest() string {
 
 	// 按延迟从小到大排序
 	sort.Slice(datacenters, func(i, j int) bool {
-		// 未测试成功的放到最后
+		// 未测试成功的标记为 999ms
 		if !datacenters[i].Tested || datacenters[i].Avg.Milliseconds() == 0 {
-			return false
+			datacenters[i].Avg = 999 * time.Millisecond
 		}
 		if !datacenters[j].Tested || datacenters[j].Avg.Milliseconds() == 0 {
-			return true
+			datacenters[j].Avg = 999 * time.Millisecond
 		}
 		return datacenters[i].Avg < datacenters[j].Avg
 	})
@@ -157,10 +157,6 @@ func TelegramDCTest() string {
 	var result string
 	count := 0
 	for _, dc := range datacenters {
-		if !dc.Tested || dc.Avg.Milliseconds() == 0 {
-			continue // 跳过测试失败的
-		}
-
 		// 每三个数据中心换行一次
 		if count > 0 && count%3 == 0 {
 			result += "\n"

@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const PingTestVersion = "v0.0.8"
+const PingTestVersion = "v0.0.9"
 
 var EnableLoger = false
 var MaxConcurrency = 30 // 并发量
@@ -15,6 +15,7 @@ var (
 	CnCT        = "https://raw.githubusercontent.com/spiritLHLS/speedtest.cn-CN-ID/main/telecom.csv"
 	CnCU        = "https://raw.githubusercontent.com/spiritLHLS/speedtest.cn-CN-ID/main/unicom.csv"
 	CdnList     = []string{
+		"https://cdn.spiritlhl.net/",
 		"http://cdn1.spiritlhl.net/",
 		"http://cdn2.spiritlhl.net/",
 		"http://cdn3.spiritlhl.net/",

@@ -104,12 +104,13 @@ func WebsiteTest() string {
 	}
 	wg.Wait()
 
-	// 收集所有测试成功的网站
+	// 收集所有测试的网站（包括失败的，标记为 999ms）
 	var allSites []model.Website
 	for _, site := range websites {
-		if site.Tested && site.Avg.Milliseconds() > 0 {
-			allSites = append(allSites, site)
+		if !site.Tested || site.Avg.Milliseconds() == 0 {
+			site.Avg = 999 * time.Millisecond
 		}
+		allSites = append(allSites, site)
 	}
 
 	// 按延迟从小到大排序
