@@ -60,11 +60,8 @@ func main() {
 	case "web":
 		res = pt.WebsiteTest()
 	case "china":
-		// 国内三网 + TG + 网站
-		res1 := pt.PingTest()
-		res2 := pt.TelegramDCTest()
-		res3 := pt.WebsiteTest()
-		res = res1 + "\n" + res2 + "\n" + res3
+		// 国内三网
+		res = pt.PingTest()
 	case "global":
 		// TG + 网站（不含三网）
 		res1 := pt.TelegramDCTest()
