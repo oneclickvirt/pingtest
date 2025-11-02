@@ -8,7 +8,7 @@
 
 - [x] **三网延迟测试** - 基于[speedtestnet](https://github.com/spiritLHLS/speedtest.net-CN-ID)、[speedtestcn](https://github.com/spiritLHLS/speedtest.cn-CN-ID)、[icmp_targets](https://github.com/spiritLHLS/icmp_targets)的数据
 - [x] **Telegram DC 检测** - 测试所有 Telegram 数据中心的连通性和延迟（参考 [OctoGramApp](https://github.com/OctoGramApp/octogramapp.github.io)）
-- [x] **流行网站测试** - 测试 Google、YouTube、Netflix、OpenAI 等主流网站的连通性（参考 [vps-scripts](https://github.com/mereithhh/vps-scripts) 和 [UnlockTests](https://github.com/oneclickvirt/UnlockTests)）
+- [x] **流行网站测试** - 测试 Google、YouTube、Netflix、OpenAI 等主流网站的连通性 [UnlockTests](https://github.com/oneclickvirt/UnlockTests)）
 - [x] 支持调用本机```ping```进行测试
 - [x] 支持使用官方```pro-bing```库进行测试
 - [x] 主体逻辑借鉴了[ecsspeed](https://github.com/spiritLHLS/ecsspeed)
