@@ -119,8 +119,6 @@ func WebsiteTest() string {
 
 	// 格式化输出，参考三网延迟测试的格式
 	var result string
-	result += "流行网站连通性测试\n\n"
-
 	count := 0
 	for _, site := range allSites {
 		// 每三个网站换行一次

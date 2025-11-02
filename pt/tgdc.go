@@ -155,8 +155,6 @@ func TelegramDCTest() string {
 
 	// 格式化输出结果，参考三网延迟测试的格式
 	var result string
-	result += "Telegram 数据中心连通性测试\n\n"
-
 	count := 0
 	for _, dc := range datacenters {
 		if !dc.Tested || dc.Avg.Milliseconds() == 0 {
