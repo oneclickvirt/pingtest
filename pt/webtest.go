@@ -105,11 +105,11 @@ func WebsiteTest() string {
 	}
 	wg.Wait()
 
-	// 收集所有测试的网站（包括失败的，标记为 999ms）
+	// 收集所有测试的网站（包括失败的，标记为 9999ms）
 	var allSites []model.Website
 	for _, site := range websites {
 		if !site.Tested || site.Avg.Milliseconds() == 0 {
-			site.Avg = 999 * time.Millisecond
+			site.Avg = 9999 * time.Millisecond
 		}
 		allSites = append(allSites, site)
 	}

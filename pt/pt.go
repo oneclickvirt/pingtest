@@ -21,29 +21,43 @@ const (
 	timeout          = 3 * time.Second
 )
 
-// pingServerByGolang 使用golang的ping库进行测试
+// pingServerByGolang 使用golang的ping库进行测试 (重复3次取平均)
 func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	pinger, err := probing.NewPinger(server.IP)
-	if err != nil {
-		logError("cannot create pinger: " + err.Error())
-		return
+	
+	var totalDuration time.Duration
+	successCount := 0
+	
+	// 重复测试3次
+	for attempt := 0; attempt < 3; attempt++ {
+		pinger, err := probing.NewPinger(server.IP)
+		if err != nil {
+			logError(fmt.Sprintf("cannot create pinger (尝试 %d/3): %v", attempt+1, err))
+			continue
+		}
+		pinger.Count = 1 // 每次只ping一次
+		pinger.Timeout = timeout
+		err = pinger.Run()
+		if err != nil {
+			logError(fmt.Sprintf("ping failed (尝试 %d/3): %v", attempt+1, err))
+			continue
+		}
+		stats := pinger.Statistics()
+		if stats.PacketsRecv > 0 {
+			totalDuration += stats.AvgRtt
+			successCount++
+			logError(fmt.Sprintf("Ping %s 成功 (尝试 %d/3): %dms", server.Name, attempt+1, stats.AvgRtt.Milliseconds()))
+		}
 	}
-	pinger.Count = pingCount
-	pinger.Timeout = timeout
-	err = pinger.Run()
-	if err != nil {
-		logError("ping failed: " + err.Error())
-		return
-	}
-	stats := pinger.Statistics()
-	if stats.PacketsRecv > 0 {
-		server.Avg = stats.AvgRtt
+	
+	if successCount > 0 {
+		server.Avg = totalDuration / time.Duration(successCount)
 		server.Tested = true
 	} else {
 		server.Avg = 0
+		server.Tested = false
 	}
 }
 
@@ -74,45 +88,61 @@ func pingServerByCMD(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	// 执行 ping 命令
-	var cmd *exec.Cmd
+	
+	var totalDuration time.Duration
+	successCount := 0
 	rootPerm := hasRootPermission()
 	logError(fmt.Sprintf("Root permission check: %v", rootPerm))
-	if rootPerm {
-		cmd = exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
-	} else {
-		cmd = exec.Command("ping", "-c1", "-W3", server.IP)
-	}
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logError("cannot ping: " + err.Error())
-		return
-	}
-	if model.EnableLoger {
-		logError(string(output))
-	}
-	// 解析输出结果
-	if !strings.Contains(string(output), "time=") {
-		logError("ping failed without time=")
-		return
-	}
-	var avgTime float64
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "time=") {
-			matches := strings.Split(line, "time=")
-			if len(matches) >= 2 {
-				avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
-				if err != nil {
-					logError("cannot parse avgTime: " + err.Error())
-					return
+	
+	// 重复测试3次
+	for attempt := 0; attempt < 3; attempt++ {
+		// 执行 ping 命令
+		var cmd *exec.Cmd
+		if rootPerm {
+			cmd = exec.Command("sudo", "ping", "-c1", "-W3", server.IP)
+		} else {
+			cmd = exec.Command("ping", "-c1", "-W3", server.IP)
+		}
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logError(fmt.Sprintf("cannot ping (尝试 %d/3): %v", attempt+1, err))
+			continue
+		}
+		if model.EnableLoger {
+			logError(string(output))
+		}
+		// 解析输出结果
+		if !strings.Contains(string(output), "time=") {
+			logError(fmt.Sprintf("ping failed without time= (尝试 %d/3)", attempt+1))
+			continue
+		}
+		var avgTime float64
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "time=") {
+				matches := strings.Split(line, "time=")
+				if len(matches) >= 2 {
+					avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
+					if err != nil {
+						logError(fmt.Sprintf("cannot parse avgTime (尝试 %d/3): %v", attempt+1, err))
+						continue
+					}
+					totalDuration += time.Duration(avgTime * float64(time.Millisecond))
+					successCount++
+					logError(fmt.Sprintf("Ping %s 成功 (尝试 %d/3): %.2fms", server.Name, attempt+1, avgTime))
+					break
 				}
-				break
 			}
 		}
 	}
-	server.Avg = time.Duration(avgTime * float64(time.Millisecond))
-	server.Tested = true
+	
+	if successCount > 0 {
+		server.Avg = totalDuration / time.Duration(successCount)
+		server.Tested = true
+	} else {
+		server.Avg = 0
+		server.Tested = false
+	}
 }
 
 // 预处理服务器列表，确保每个运营商+省份组合只有一个服务器
@@ -179,9 +209,9 @@ func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*
 	wg.Wait()
 	var testedServers []*model.Server
 	for _, server := range uniqueServers {
-		// 所有服务器都保留，失败的标记为 999ms
+		// 所有服务器都保留，失败的标记为 9999ms
 		if !server.Tested || server.Avg.Milliseconds() == 0 {
-			server.Avg = 999 * time.Millisecond
+			server.Avg = 9999 * time.Millisecond
 		}
 		testedServers = append(testedServers, server)
 	}

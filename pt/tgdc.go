@@ -15,75 +15,105 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 )
 
-// pingTelegramDCByGolang 使用golang的ping库测试Telegram DC
+// pingTelegramDCByGolang 使用golang的ping库测试Telegram DC (重复3次取平均)
 func pingTelegramDCByGolang(dc *model.TelegramDC) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	pinger, err := probing.NewPinger(dc.IP)
-	if err != nil {
-		logError("无法创建 pinger: " + err.Error())
-		return
+	
+	var totalDuration time.Duration
+	successCount := 0
+	
+	// 重复测试3次
+	for attempt := 0; attempt < 3; attempt++ {
+		pinger, err := probing.NewPinger(dc.IP)
+		if err != nil {
+			logError(fmt.Sprintf("无法创建 pinger (尝试 %d/3): %v", attempt+1, err))
+			continue
+		}
+		pinger.Count = 1 // 每次只ping一次
+		pinger.Timeout = timeout
+		err = pinger.Run()
+		if err != nil {
+			logError(fmt.Sprintf("ping 失败 (尝试 %d/3): %v", attempt+1, err))
+			continue
+		}
+		stats := pinger.Statistics()
+		if stats.PacketsRecv > 0 {
+			totalDuration += stats.AvgRtt
+			successCount++
+			logError(fmt.Sprintf("Ping %s 成功 (尝试 %d/3): %dms", dc.Name, attempt+1, stats.AvgRtt.Milliseconds()))
+		}
 	}
-	pinger.Count = pingCount
-	pinger.Timeout = timeout
-	err = pinger.Run()
-	if err != nil {
-		logError("ping 失败: " + err.Error())
-		return
-	}
-	stats := pinger.Statistics()
-	if stats.PacketsRecv > 0 {
-		dc.Avg = stats.AvgRtt
+	
+	if successCount > 0 {
+		dc.Avg = totalDuration / time.Duration(successCount)
 		dc.Tested = true
 	} else {
 		dc.Avg = 0
+		dc.Tested = false
 	}
 }
 
-// pingTelegramDCByCMD 使用系统ping命令测试Telegram DC
+// pingTelegramDCByCMD 使用系统ping命令测试Telegram DC (重复3次取平均)
 func pingTelegramDCByCMD(dc *model.TelegramDC) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	var cmd *exec.Cmd
+	
+	var totalDuration time.Duration
+	successCount := 0
 	rootPerm := hasRootPermission()
 	logError(fmt.Sprintf("Root权限检查: %v", rootPerm))
-	if rootPerm {
-		cmd = exec.Command("sudo", "ping", "-c1", "-W3", dc.IP)
-	} else {
-		cmd = exec.Command("ping", "-c1", "-W3", dc.IP)
-	}
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		logError("无法ping: " + err.Error())
-		return
-	}
-	if model.EnableLoger {
-		logError(string(output))
-	}
-	// 解析输出结果
-	if !strings.Contains(string(output), "time=") {
-		logError("ping 失败，未找到 time=")
-		return
-	}
-	var avgTime float64
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.Contains(line, "time=") {
-			matches := strings.Split(line, "time=")
-			if len(matches) >= 2 {
-				avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
-				if err != nil {
-					logError("无法解析平均延迟: " + err.Error())
-					return
+	
+	// 重复测试3次
+	for attempt := 0; attempt < 3; attempt++ {
+		var cmd *exec.Cmd
+		if rootPerm {
+			cmd = exec.Command("sudo", "ping", "-c1", "-W3", dc.IP)
+		} else {
+			cmd = exec.Command("ping", "-c1", "-W3", dc.IP)
+		}
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			logError(fmt.Sprintf("无法ping (尝试 %d/3): %v", attempt+1, err))
+			continue
+		}
+		if model.EnableLoger {
+			logError(string(output))
+		}
+		// 解析输出结果
+		if !strings.Contains(string(output), "time=") {
+			logError(fmt.Sprintf("ping 失败，未找到 time= (尝试 %d/3)", attempt+1))
+			continue
+		}
+		var avgTime float64
+		lines := strings.Split(string(output), "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "time=") {
+				matches := strings.Split(line, "time=")
+				if len(matches) >= 2 {
+					avgTime, err = strconv.ParseFloat(strings.TrimSpace(strings.ReplaceAll(matches[1], "ms", "")), 64)
+					if err != nil {
+						logError(fmt.Sprintf("无法解析平均延迟 (尝试 %d/3): %v", attempt+1, err))
+						continue
+					}
+					totalDuration += time.Duration(avgTime * float64(time.Millisecond))
+					successCount++
+					logError(fmt.Sprintf("Ping %s 成功 (尝试 %d/3): %.2fms", dc.Name, attempt+1, avgTime))
+					break
 				}
-				break
 			}
 		}
 	}
-	dc.Avg = time.Duration(avgTime * float64(time.Millisecond))
-	dc.Tested = true
+	
+	if successCount > 0 {
+		dc.Avg = totalDuration / time.Duration(successCount)
+		dc.Tested = true
+	} else {
+		dc.Avg = 0
+		dc.Tested = false
+	}
 }
 
 // pingTelegramDCSimple 简化版的ping函数，用于测试单个Telegram DC
@@ -144,12 +174,12 @@ func TelegramDCTest() string {
 
 	// 按延迟从小到大排序
 	sort.Slice(datacenters, func(i, j int) bool {
-		// 未测试成功的标记为 999ms
+		// 未测试成功的标记为 9999ms
 		if !datacenters[i].Tested || datacenters[i].Avg.Milliseconds() == 0 {
-			datacenters[i].Avg = 999 * time.Millisecond
+			datacenters[i].Avg = 9999 * time.Millisecond
 		}
 		if !datacenters[j].Tested || datacenters[j].Avg.Milliseconds() == 0 {
-			datacenters[j].Avg = 999 * time.Millisecond
+			datacenters[j].Avg = 9999 * time.Millisecond
 		}
 		return datacenters[i].Avg < datacenters[j].Avg
 	})
