@@ -148,5 +148,5 @@ rm -rf /usr/bin/pt
 ## 在 Golang 中使用
 
 ```bash
-go get github.com/oneclickvirt/pingtest@v0.0.9-20251102150730
+go get github.com/oneclickvirt/pingtest@v0.0.9-20251104112920
 ```
