@@ -33,6 +33,12 @@ func logError(msg string) {
 // checkCDN 检查单个 CDN 是否可用，参考 shell 脚本的实现
 // 通过访问测试 URL 并检查响应中是否包含 "success" 来验证
 func checkCDN(cdnURL string) bool {
+	defer func() {
+		if r := recover(); r != nil {
+			logError(fmt.Sprintf("checkCDN panic 恢复: %v", r))
+		}
+	}()
+
 	client := req.C()
 	client.SetTimeout(6 * time.Second) // 与 shell 脚本的 --max-time 6 保持一致
 
@@ -44,25 +50,25 @@ func checkCDN(cdnURL string) bool {
 		logError(fmt.Sprintf("CDN 测试失败 %s: %v", cdnURL, err))
 		return false
 	}
-
-	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
-		b, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			logError(fmt.Sprintf("读取 CDN 测试响应失败 %s: %v", cdnURL, readErr))
-			return false
-		}
-
-		bodyStr := string(b)
-		// 与 shell 脚本一致，检查响应中是否包含 "success"
-		if strings.Contains(bodyStr, "success") {
-			logError(fmt.Sprintf("CDN 可用: %s", cdnURL))
-			return true
-		} else {
-			logError(fmt.Sprintf("CDN 测试响应不包含 'success': %s", cdnURL))
-			return false
-		}
+	if resp == nil || resp.Body == nil {
+		logError(fmt.Sprintf("CDN 测试返回空响应: %s", cdnURL))
+		return false
 	}
+	defer resp.Body.Close()
+
+	b, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		logError(fmt.Sprintf("读取 CDN 测试响应失败 %s: %v", cdnURL, readErr))
+		return false
+	}
+
+	bodyStr := string(b)
+	// 与 shell 脚本一致，检查响应中是否包含 "success"
+	if strings.Contains(bodyStr, "success") {
+		logError(fmt.Sprintf("CDN 可用: %s", cdnURL))
+		return true
+	}
+	logError(fmt.Sprintf("CDN 测试响应不包含 'success': %s", cdnURL))
 
 	return false
 }
@@ -108,18 +114,25 @@ func getData(endpoint string) string {
 		}
 
 		url := baseUrl + endpoint
-		resp, err := client.R().SetContext(ctx).Get(url)
-		if err != nil {
-			logError(fmt.Sprintf("获取 %s 失败: %v", url, err))
-			continue
-		}
 
-		// 确保响应体被关闭
-		if resp != nil && resp.Body != nil {
-			defer resp.Body.Close()
+		for attempt := 0; attempt < 3; attempt++ {
+			resp, err := client.R().SetContext(ctx).Get(url)
+			if err != nil {
+				logError(fmt.Sprintf("获取 %s 失败(尝试 %d/3): %v", url, attempt+1, err))
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			if resp == nil || resp.Body == nil {
+				logError(fmt.Sprintf("获取 %s 返回空响应(尝试 %d/3)", url, attempt+1))
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+
 			b, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
 			if readErr != nil {
 				logError(fmt.Sprintf("读取响应体失败 %s: %v", url, readErr))
+				time.Sleep(500 * time.Millisecond)
 				continue
 			}
 
@@ -376,7 +389,7 @@ func getServers(operator string) []*model.Server {
 	var wg sync.WaitGroup
 	dataCh := make(chan []*model.Server, 3)
 
-	fetchData := func(data string, dataType, operator string) {
+	fetchData := func(endpoint, dataType, operator string) {
 		defer wg.Done()
 		defer func() {
 			if r := recover(); r != nil {
@@ -385,6 +398,7 @@ func getServers(operator string) []*model.Server {
 			}
 		}()
 
+		data := getData(endpoint)
 		if data != "" {
 			parsedData := parseCSVData(data, dataType, operator)
 			dataCh <- parsedData
@@ -431,8 +445,8 @@ func getServers(operator string) []*model.Server {
 
 	// 获取其他两种来源的数据
 	wg.Add(2)
-	go fetchData(getData(netList[netIndex]), "net", operator)
-	go fetchData(getData(cnList[cnIndex]), "cn", operator)
+	go fetchData(netList[netIndex], "net", operator)
+	go fetchData(cnList[cnIndex], "cn", operator)
 
 	// 使用超时机制等待所有 goroutine 完成
 	done := make(chan struct{})

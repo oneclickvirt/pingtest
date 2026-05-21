@@ -274,11 +274,25 @@ func PingTest() string {
 	for servers := range resultChan {
 		allServers = append(allServers, servers...)
 	}
+	filteredServers := make([]*model.Server, 0, len(allServers))
+	for _, server := range allServers {
+		if server == nil {
+			continue
+		}
+		filteredServers = append(filteredServers, server)
+	}
+	allServers = filteredServers
 	// 首先按运营商分组，然后按延迟排序
 	sort.Slice(allServers, func(i, j int) bool {
 		// 获取运营商名称前缀（前两个字符）
-		isp1 := allServers[i].Name[:2]
-		isp2 := allServers[j].Name[:2]
+		isp1 := "未知"
+		if len(allServers[i].Name) >= 2 {
+			isp1 = allServers[i].Name[:2]
+		}
+		isp2 := "未知"
+		if len(allServers[j].Name) >= 2 {
+			isp2 = allServers[j].Name[:2]
+		}
 		// 先按运营商分组
 		if isp1 != isp2 {
 			return isp1 < isp2
@@ -291,7 +305,10 @@ func PingTest() string {
 	var count int
 	for _, server := range allServers {
 		// 提取运营商
-		isp := server.Name[:2]
+		isp := "未知"
+		if len(server.Name) >= 2 {
+			isp = server.Name[:2]
+		}
 		// 如果运营商变了，输出分隔符
 		if isp != currentISP {
 			if currentISP != "" {
