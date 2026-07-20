@@ -1,9 +1,27 @@
 package model
 
 import (
+	"context"
+	_ "embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
+)
+
+//go:embed snapshot/tcp-targets.json
+var embeddedTCPTargets []byte
+
+const (
+	TCPTargetRegistryRawURL = "https://raw.githubusercontent.com/oneclickvirt/pingtest/main/model/snapshot/tcp-targets.json"
+	TCPTargetRegistryCDNURL = "https://cdn.spiritlhl.net/" + TCPTargetRegistryRawURL
 )
 
 // TCPTarget describes an endpoint used by the TCP handshake probe.
@@ -15,81 +33,43 @@ type TCPTarget struct {
 	Source   string `json:"source,omitempty"`
 }
 
-// tcpBenchTargets contains the public HTTPS endpoints used by TCPbench. It is
-// kept as data so callers can replace or filter the registry without changing
-// probe logic.
-var tcpBenchTargets = []TCPTarget{
-	{Name: "NYTimes", Host: "www.nytimes.com"},
-	{Name: "TheGuardian", Host: "www.theguardian.com"},
-	{Name: "CNN", Host: "www.cnn.com"},
-	{Name: "Vercel", Host: "vercel.com"},
-	{Name: "Reddit", Host: "www.reddit.com"},
-	{Name: "BBC", Host: "www.bbc.com"},
-	{Name: "Azure", Host: "azure.microsoft.com"},
-	{Name: "Twitch", Host: "www.twitch.tv"},
-	{Name: "Adobe", Host: "www.adobe.com"},
-	{Name: "TikTok", Host: "www.tiktok.com"},
-	{Name: "Apple", Host: "www.apple.com"},
-	{Name: "PayPal", Host: "www.paypal.com"},
-	{Name: "YahooMail", Host: "mail.yahoo.com"},
-	{Name: "Steam", Host: "store.steampowered.com"},
-	{Name: "Bing", Host: "www.bing.com"},
-	{Name: "Discord", Host: "discord.com"},
-	{Name: "Zoom", Host: "zoom.us"},
-	{Name: "GitLab", Host: "gitlab.com"},
-	{Name: "Twitter/X", Host: "twitter.com"},
-	{Name: "Udemy", Host: "www.udemy.com"},
-	{Name: "Cloudflare", Host: "www.cloudflare.com"},
-	{Name: "Notion", Host: "www.notion.so"},
-	{Name: "Midjourney", Host: "www.midjourney.com"},
-	{Name: "Shopify", Host: "www.shopify.com"},
-	{Name: "DeepL", Host: "www.deepl.com"},
-	{Name: "Claude", Host: "claude.ai"},
-	{Name: "ChatGPT", Host: "chatgpt.com"},
-	{Name: "Perplexity", Host: "www.perplexity.ai"},
-	{Name: "Medium", Host: "medium.com"},
-	{Name: "Copilot", Host: "copilot.microsoft.com"},
-	{Name: "Coinbase", Host: "www.coinbase.com"},
-	{Name: "Microsoft", Host: "www.microsoft.com"},
-	{Name: "Facebook", Host: "www.facebook.com"},
-	{Name: "Instagram", Host: "www.instagram.com"},
-	{Name: "WhatsApp", Host: "web.whatsapp.com"},
-	{Name: "Dropbox", Host: "www.dropbox.com"},
-	{Name: "Spotify", Host: "www.spotify.com"},
-	{Name: "GoogleCloud", Host: "cloud.google.com"},
-	{Name: "Slack", Host: "slack.com"},
-	{Name: "Telegram", Host: "web.telegram.org"},
-	{Name: "GitHub", Host: "github.com"},
-	{Name: "Wikipedia", Host: "www.wikipedia.org"},
-	{Name: "Gemini", Host: "gemini.google.com"},
-	{Name: "eBay", Host: "www.ebay.com"},
-	{Name: "Google", Host: "www.google.com"},
-	{Name: "Stripe", Host: "stripe.com"},
-	{Name: "Gmail", Host: "mail.google.com"},
-	{Name: "Netflix", Host: "www.netflix.com"},
-	{Name: "edX", Host: "www.edx.org"},
-	{Name: "YouTube", Host: "www.youtube.com"},
-	{Name: "AWS", Host: "aws.amazon.com"},
-	{Name: "Coursera", Host: "www.coursera.org"},
-	{Name: "Trello", Host: "trello.com"},
-	{Name: "Canva", Host: "www.canva.com"},
-	{Name: "ProtonMail", Host: "mail.proton.me"},
-	{Name: "Figma", Host: "www.figma.com"},
-	{Name: "KhanAcademy", Host: "www.khanacademy.org"},
-	{Name: "EpicGames", Host: "www.epicgames.com"},
-	{Name: "Amazon", Host: "www.amazon.com"},
-	{Name: "Outlook", Host: "outlook.live.com"},
-	{Name: "Xbox", Host: "www.xbox.com"},
-	{Name: "Oracle", Host: "www.oracle.com"},
-	{Name: "PlayStation", Host: "www.playstation.com"},
-	{Name: "Salesforce", Host: "www.salesforce.com"},
+type TCPTargetRegistrySource struct {
+	Name string
+	URL  string
+}
+
+type TCPTargetRegistryLoadResult struct {
+	Targets  []TCPTarget
+	Source   string
+	Fallback bool
+}
+
+func DefaultTCPTargetRegistrySources() []TCPTargetRegistrySource {
+	return []TCPTargetRegistrySource{
+		{Name: "cdn", URL: TCPTargetRegistryCDNURL},
+		{Name: "raw", URL: TCPTargetRegistryRawURL},
+	}
 }
 
 // AllTCPTargets returns a copy of the registry formed from the existing
 // website list and TCPbench endpoints. Existing website entries take
 // precedence when their normalized host and port are already present.
 func AllTCPTargets() []TCPTarget {
-	result := make([]TCPTarget, 0, len(PopularWebsites)+len(tcpBenchTargets))
+	targets, _ := decodeTCPTargetRegistry(embeddedTCPTargets, 1)
+	return mergeTCPTargets(targets)
+}
+
+func LoadMergedTCPTargets(ctx context.Context, client *http.Client, sources []TCPTargetRegistrySource, minimum int) (TCPTargetRegistryLoadResult, error) {
+	loaded, err := LoadTCPTargetRegistry(ctx, client, sources, minimum)
+	if err != nil {
+		return TCPTargetRegistryLoadResult{}, err
+	}
+	loaded.Targets = mergeTCPTargets(loaded.Targets)
+	return loaded, nil
+}
+
+func mergeTCPTargets(additional []TCPTarget) []TCPTarget {
+	result := make([]TCPTarget, 0, len(PopularWebsites)+len(additional))
 	seen := make(map[string]int, cap(result))
 
 	for _, target := range WebsiteTCPTargets() {
@@ -100,11 +80,7 @@ func AllTCPTargets() []TCPTarget {
 		seen[key] = len(result)
 		result = append(result, target)
 	}
-	for _, target := range tcpBenchTargets {
-		if target.Port == 0 {
-			target.Port = 443
-		}
-		target.Source = "tcpbench"
+	for _, target := range additional {
 		key := targetKey(target)
 		if _, exists := seen[key]; exists {
 			continue
@@ -113,6 +89,154 @@ func AllTCPTargets() []TCPTarget {
 		result = append(result, target)
 	}
 	return result
+}
+
+func NormalizeTCPTargetRegistrySnapshot(data []byte, minimum int) ([]byte, error) {
+	targets, err := decodeTCPTargetRegistry(data, minimum)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(targets, func(i, j int) bool {
+		if targets[i].Category != targets[j].Category {
+			return targets[i].Category < targets[j].Category
+		}
+		if targets[i].Name != targets[j].Name {
+			return targets[i].Name < targets[j].Name
+		}
+		if targets[i].Host != targets[j].Host {
+			return targets[i].Host < targets[j].Host
+		}
+		return targets[i].Port < targets[j].Port
+	})
+	encoded, err := json.MarshalIndent(targets, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(encoded, '\n'), nil
+}
+
+func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []TCPTargetRegistrySource, minimum int) (TCPTargetRegistryLoadResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 8 * time.Second}
+	}
+	if minimum < 1 {
+		minimum = 1
+	}
+	var lastErr error
+	for index, source := range sources {
+		data, err := fetchTCPTargetRegistry(ctx, client, source.URL)
+		if err != nil {
+			lastErr = fmt.Errorf("load %s TCP target registry: %w", source.Name, err)
+			continue
+		}
+		targets, err := decodeTCPTargetRegistry(data, minimum)
+		if err != nil {
+			lastErr = fmt.Errorf("validate %s TCP target registry: %w", source.Name, err)
+			continue
+		}
+		return TCPTargetRegistryLoadResult{Targets: targets, Source: source.Name, Fallback: index > 0}, nil
+	}
+	targets, err := decodeTCPTargetRegistry(embeddedTCPTargets, minimum)
+	if err == nil {
+		return TCPTargetRegistryLoadResult{Targets: targets, Source: "embedded", Fallback: true}, nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no TCP target registry sources configured")
+	}
+	return TCPTargetRegistryLoadResult{}, fmt.Errorf("%w; embedded fallback: %v", lastErr, err)
+}
+
+func fetchTCPTargetRegistry(ctx context.Context, client *http.Client, endpoint string) ([]byte, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+		return nil, errors.New("invalid registry URL")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", "oneclickvirt-pingtest/tcp-target-registry-v1")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", response.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(response.Body, 2<<20))
+}
+
+func decodeTCPTargetRegistry(data []byte, minimum int) ([]TCPTarget, error) {
+	var input []TCPTarget
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&input); err != nil {
+		return nil, err
+	}
+	if err := ensureTCPTargetJSONEOF(decoder); err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(input))
+	targets := make([]TCPTarget, 0, len(input))
+	for _, target := range input {
+		target.Name = strings.TrimSpace(target.Name)
+		target.Host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(target.Host), "."))
+		target.Category = strings.TrimSpace(target.Category)
+		target.Source = strings.TrimSpace(target.Source)
+		if target.Port == 0 {
+			target.Port = 443
+		}
+		if target.Name == "" || !validTCPTargetHost(target.Host) || target.Port < 1 || target.Port > 65535 {
+			continue
+		}
+		key := targetKey(target)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, target)
+	}
+	if len(targets) < minimum {
+		return nil, fmt.Errorf("TCP target registry has %d valid targets; require at least %d", len(targets), minimum)
+	}
+	return targets, nil
+}
+
+func validTCPTargetHost(host string) bool {
+	if ip := net.ParseIP(strings.Trim(host, "[]")); ip != nil {
+		return true
+	}
+	if host == "" || len(host) > 253 || strings.ContainsAny(host, " /\\:") {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, character := range label {
+			if character == '-' || character >= 'a' && character <= 'z' || character >= '0' && character <= '9' {
+				continue
+			}
+			return false
+		}
+	}
+	return true
+}
+
+func ensureTCPTargetJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("TCP target registry contains trailing JSON")
+		}
+		return err
+	}
+	return nil
 }
 
 // WebsiteTCPTargets returns a normalized copy of the existing popular website

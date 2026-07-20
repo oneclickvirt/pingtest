@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,20 @@ func TestRunCLIDefaultKeepsOriginalMode(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "ping-result") {
 		t.Fatalf("default output = %q", output.String())
+	}
+	if !strings.HasPrefix(output.String(), "项目地址:") {
+		t.Fatalf("default output prefix changed: %q", output.String())
+	}
+}
+
+func TestRunCLIRejectsJSONOutsideTCPMode(t *testing.T) {
+	runner, calls := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-json"}, &output, runner); exitCode == 0 {
+		t.Fatal("JSON outside TCP mode returned success")
+	}
+	if len(*calls) != 0 || !strings.Contains(output.String(), "仅支持") {
+		t.Fatalf("unexpected dispatch/output: calls=%v output=%q", *calls, output.String())
 	}
 }
 
@@ -72,7 +87,7 @@ func offlineRunner() (commandRunner, *[]string) {
 		ping:     recordText("ping"),
 		telegram: recordText("telegram"),
 		website:  recordText("website"),
-		tcp: func(context.Context) []pt.TCPResult {
+		tcp: func(_ context.Context, _ pt.TCPProbeConfig, _ string) ([]pt.TCPResult, error) {
 			calls = append(calls, "tcp")
 			return []pt.TCPResult{{
 				Target:      model.TCPTarget{Name: "fixture", Host: "fixture.test", Port: 443},
@@ -84,7 +99,42 @@ func offlineRunner() (commandRunner, *[]string) {
 				P95:         time.Millisecond,
 				Max:         time.Millisecond,
 				LossPercent: 0,
-			}}
+			}}, nil
 		},
 	}, &calls
+}
+
+func TestRunCLITCPParametersReachRunnerAndJSONIsClean(t *testing.T) {
+	var gotConfig pt.TCPProbeConfig
+	var gotTarget string
+	runner := commandRunner{
+		tcp: func(_ context.Context, config pt.TCPProbeConfig, target string) ([]pt.TCPResult, error) {
+			gotConfig, gotTarget = config, target
+			return []pt.TCPResult{{Target: model.TCPTarget{Host: "fixture.test", Port: 8443}, Attempts: config.Attempts}}, nil
+		},
+	}
+	var output bytes.Buffer
+	args := []string{"-tm", "tcp", "-json", "-attempts", "5", "-timeout", "750ms", "-concurrency", "7", "-target", "fixture.test:8443"}
+	if exitCode := runCLI(context.Background(), args, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if gotConfig.Attempts != 5 || gotConfig.Timeout != 750*time.Millisecond || gotConfig.Concurrency != 7 || gotTarget != "fixture.test:8443" {
+		t.Fatalf("TCP options not forwarded: config=%+v target=%q", gotConfig, gotTarget)
+	}
+	var results []pt.TCPResult
+	if err := json.Unmarshal(output.Bytes(), &results); err != nil {
+		t.Fatalf("stdout is not clean JSON: %v: %q", err, output.String())
+	}
+	if len(results) != 1 || results[0].Attempts != 5 {
+		t.Fatalf("unexpected JSON results: %+v", results)
+	}
+}
+
+func TestParseTCPTargetDefaultsPortAndAcceptsIPv6(t *testing.T) {
+	for input, wantHost := range map[string]string{"example.test": "example.test", "2001:db8::1": "2001:db8::1"} {
+		target, err := parseTCPTarget(input)
+		if err != nil || target.Host != wantHost || target.Port != 443 {
+			t.Fatalf("parseTCPTarget(%q) = %+v, %v", input, target, err)
+		}
+	}
 }

@@ -20,10 +20,10 @@ func pingTelegramDCByGolang(dc *model.TelegramDC) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	
+
 	var totalDuration time.Duration
 	successCount := 0
-	
+
 	// 重复测试3次
 	for attempt := 0; attempt < 3; attempt++ {
 		pinger, err := probing.NewPinger(dc.IP)
@@ -45,7 +45,7 @@ func pingTelegramDCByGolang(dc *model.TelegramDC) {
 			logError(fmt.Sprintf("Ping %s 成功 (尝试 %d/3): %dms", dc.Name, attempt+1, stats.AvgRtt.Milliseconds()))
 		}
 	}
-	
+
 	if successCount > 0 {
 		dc.Avg = totalDuration / time.Duration(successCount)
 		dc.Tested = true
@@ -60,12 +60,12 @@ func pingTelegramDCByCMD(dc *model.TelegramDC) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	
+
 	var totalDuration time.Duration
 	successCount := 0
 	rootPerm := hasRootPermission()
 	logError(fmt.Sprintf("Root权限检查: %v", rootPerm))
-	
+
 	// 重复测试3次
 	for attempt := 0; attempt < 3; attempt++ {
 		var cmd *exec.Cmd
@@ -106,7 +106,7 @@ func pingTelegramDCByCMD(dc *model.TelegramDC) {
 			}
 		}
 	}
-	
+
 	if successCount > 0 {
 		dc.Avg = totalDuration / time.Duration(successCount)
 		dc.Tested = true

@@ -1,0 +1,39 @@
+name: Sync TCP target registry
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pingtest-tcp-target-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Update embedded TCP targets
+        run: go run ./cmd/update-tcp-targets -output model/snapshot/tcp-targets.json
+      - name: Verify snapshot
+        run: |
+          go test -race ./...
+          go vet ./...
+          git diff --check
+      - name: Commit semantic changes
+        run: |
+          if [[ -z "$(git status --porcelain -- model/snapshot/tcp-targets.json)" ]]; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add model/snapshot/tcp-targets.json
+          git commit -m "chore: sync TCP target registry"
+          git push

@@ -199,6 +199,17 @@ func RunTCPRegistry(ctx context.Context, config TCPProbeConfig) []TCPResult {
 	return RunTCPProbes(ctx, model.AllTCPTargets(), config)
 }
 
+// RunLoadedTCPRegistry resolves the repository-owned remote registry with an
+// embedded fallback before probing it. The load result lets API callers report
+// the actual data source without parsing target metadata.
+func RunLoadedTCPRegistry(ctx context.Context, config TCPProbeConfig) ([]TCPResult, model.TCPTargetRegistryLoadResult, error) {
+	loaded, err := model.LoadMergedTCPTargets(ctx, nil, model.DefaultTCPTargetRegistrySources(), 10)
+	if err != nil {
+		return nil, model.TCPTargetRegistryLoadResult{}, err
+	}
+	return RunTCPProbes(ctx, loaded.Targets, config), loaded, nil
+}
+
 // FormatTCPResults renders structured TCP results for the standalone CLI.
 // API consumers should keep using TCPResult so durations and error classes do
 // not need to be parsed back from terminal text.

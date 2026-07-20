@@ -26,10 +26,10 @@ func pingServerByGolang(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	
+
 	var totalDuration time.Duration
 	successCount := 0
-	
+
 	// 重复测试3次
 	for attempt := 0; attempt < 3; attempt++ {
 		pinger, err := probing.NewPinger(server.IP)
@@ -51,7 +51,7 @@ func pingServerByGolang(server *model.Server) {
 			logError(fmt.Sprintf("Ping %s 成功 (尝试 %d/3): %dms", server.Name, attempt+1, stats.AvgRtt.Milliseconds()))
 		}
 	}
-	
+
 	if successCount > 0 {
 		server.Avg = totalDuration / time.Duration(successCount)
 		server.Tested = true
@@ -88,12 +88,12 @@ func pingServerByCMD(server *model.Server) {
 	if model.EnableLoger {
 		defer Logger.Sync()
 	}
-	
+
 	var totalDuration time.Duration
 	successCount := 0
 	rootPerm := hasRootPermission()
 	logError(fmt.Sprintf("Root permission check: %v", rootPerm))
-	
+
 	// 重复测试3次
 	for attempt := 0; attempt < 3; attempt++ {
 		// 执行 ping 命令
@@ -135,7 +135,7 @@ func pingServerByCMD(server *model.Server) {
 			}
 		}
 	}
-	
+
 	if successCount > 0 {
 		server.Avg = totalDuration / time.Duration(successCount)
 		server.Tested = true
