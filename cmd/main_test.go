@@ -1,40 +1,90 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/oneclickvirt/pingtest/model"
+	"github.com/oneclickvirt/pingtest/pt"
 )
 
-func TestM(t *testing.T) {
-	// 设置测试超时为 2 分钟
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	// 在 goroutine 中运行 main,捕获 panic
-	done := make(chan bool)
-	panicChan := make(chan interface{})
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				panicChan <- r
-			}
-		}()
-		main()
-		done <- true
-	}()
-
-	// 等待完成、panic 或超时
-	select {
-	case <-done:
-		t.Log("测试完成")
-	case panicVal := <-panicChan:
-		t.Fatalf("测试过程中发生 panic: %v", panicVal)
-	case <-ctx.Done():
-		t.Logf("测试超时(2分钟): 这可能是由于网络连接问题导致的")
-		t.Log("建议: 检查网络连接或增加超时时间")
-		// 不使用 Fatal,允许测试继续
-		t.Skip("跳过此测试,因为网络请求超时")
+func TestRunCLIDefaultKeepsOriginalMode(t *testing.T) {
+	runner, calls := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), nil, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d", exitCode)
 	}
+	if got := strings.Join(*calls, ","); got != "ping" {
+		t.Fatalf("default dispatch = %q, want ping", got)
+	}
+	if !strings.Contains(output.String(), "ping-result") {
+		t.Fatalf("default output = %q", output.String())
+	}
+}
+
+func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
+	runner, calls := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-tm", "tcp"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d", exitCode)
+	}
+	if got := strings.Join(*calls, ","); got != "tcp" {
+		t.Fatalf("tcp dispatch = %q, want tcp", got)
+	}
+	for _, value := range []string{"目标", "成功", "fixture", "1/1", "P95", "1.00ms"} {
+		if !strings.Contains(output.String(), value) {
+			t.Errorf("TCP output %q does not contain %q", output.String(), value)
+		}
+	}
+	for _, forbidden := range []string{"success=", "loss=", "errors="} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Errorf("TCP output retained debug field %q: %q", forbidden, output.String())
+		}
+	}
+}
+
+func TestRunCLIRejectsUnknownModeWithoutScheduling(t *testing.T) {
+	runner, calls := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-tm", "missing"}, &output, runner); exitCode == 0 {
+		t.Fatal("unknown mode returned success")
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("unknown mode scheduled calls: %v", *calls)
+	}
+	if !strings.Contains(output.String(), "tcp") {
+		t.Fatalf("supported mode output does not mention tcp: %q", output.String())
+	}
+}
+
+func offlineRunner() (commandRunner, *[]string) {
+	calls := make([]string, 0, 2)
+	recordText := func(name string) func() string {
+		return func() string {
+			calls = append(calls, name)
+			return name + "-result"
+		}
+	}
+	return commandRunner{
+		ping:     recordText("ping"),
+		telegram: recordText("telegram"),
+		website:  recordText("website"),
+		tcp: func(context.Context) []pt.TCPResult {
+			calls = append(calls, "tcp")
+			return []pt.TCPResult{{
+				Target:      model.TCPTarget{Name: "fixture", Host: "fixture.test", Port: 443},
+				Attempts:    1,
+				Successful:  1,
+				Min:         time.Millisecond,
+				Mean:        time.Millisecond,
+				P50:         time.Millisecond,
+				P95:         time.Millisecond,
+				Max:         time.Millisecond,
+				LossPercent: 0,
+			}}
+		},
+	}, &calls
 }
