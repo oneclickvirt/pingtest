@@ -1,0 +1,7 @@
+{
+  "schema": "pingtest.tcp-targets/v1",
+  "file": "tcp-targets.json",
+  "count": 64,
+  "sha256": "653bec5b39892524bb3b68d7e353f0913059e0f579c119a77ed0b8f1a0c37167",
+  "generated_at": "2026-07-20T18:53:26Z"
+}

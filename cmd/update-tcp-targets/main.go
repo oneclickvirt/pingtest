@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -23,16 +25,18 @@ const defaultSourceURL = "https://raw.githubusercontent.com/se-tang/TCPbench/mai
 var shellStringPattern = regexp.MustCompile(`"(?:[^"\\]|\\.)*"`)
 
 type updateConfig struct {
-	Source  string
-	Output  string
-	Minimum int
-	Timeout time.Duration
+	Source   string
+	Output   string
+	Manifest string
+	Minimum  int
+	Timeout  time.Duration
 }
 
 func main() {
 	config := updateConfig{}
 	flag.StringVar(&config.Source, "source", defaultSourceURL, "upstream TCPbench target source")
 	flag.StringVar(&config.Output, "output", "model/snapshot/tcp-targets.json", "snapshot output path")
+	flag.StringVar(&config.Manifest, "manifest", "model/snapshot/manifest.json", "snapshot manifest output path")
 	flag.IntVar(&config.Minimum, "minimum", 50, "minimum valid targets")
 	flag.DurationVar(&config.Timeout, "timeout", 30*time.Second, "upstream request timeout")
 	flag.Parse()
@@ -84,7 +88,7 @@ func updateSnapshot(ctx context.Context, client *http.Client, config updateConfi
 	if err != nil {
 		return fmt.Errorf("validate targets: %w", err)
 	}
-	return replaceSnapshot(config.Output, candidate)
+	return replaceSnapshot(config.Output, config.Manifest, candidate)
 }
 
 func parseTCPBenchTargets(source []byte) ([]model.TCPTarget, error) {
@@ -124,7 +128,29 @@ func parseShellArray(source []byte, name string) ([]string, error) {
 	return values, nil
 }
 
-func replaceSnapshot(output string, candidate []byte) error {
+type snapshotManifest struct {
+	Schema      string `json:"schema"`
+	File        string `json:"file"`
+	Count       int    `json:"count"`
+	SHA256      string `json:"sha256"`
+	GeneratedAt string `json:"generated_at"`
+}
+
+func replaceSnapshot(output, manifestOutput string, candidate []byte) error {
+	count, err := snapshotCount(candidate)
+	if err != nil {
+		return err
+	}
+	hash := sha256.Sum256(candidate)
+	manifest := snapshotManifest{
+		Schema: model.TCPTargetRegistrySchema, File: filepath.Base(output), Count: count,
+		SHA256: hex.EncodeToString(hash[:]), GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	manifestData, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	manifestData = append(manifestData, '\n')
 	current, readErr := os.ReadFile(output)
 	if readErr == nil {
 		normalized, normalizeErr := model.NormalizeTCPTargetRegistrySnapshot(current, 1)
@@ -134,12 +160,38 @@ func replaceSnapshot(output string, candidate []byte) error {
 			if currentErr == nil && candidateErr == nil && currentCount > 0 && candidateCount*100 < currentCount*65 {
 				return fmt.Errorf("target count dropped from %d to %d", currentCount, candidateCount)
 			}
-			if bytes.Equal(normalized, candidate) {
+			if bytes.Equal(normalized, candidate) && manifestMatches(manifestOutput, candidate, count) {
 				return nil
 			}
 		}
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return fmt.Errorf("read existing snapshot: %w", readErr)
+	}
+	if err := writeAtomicSnapshot(output, candidate); err != nil {
+		return err
+	}
+	if err := writeAtomicSnapshot(manifestOutput, manifestData); err != nil {
+		return err
+	}
+	return nil
+}
+
+func manifestMatches(path string, snapshot []byte, count int) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var manifest snapshotManifest
+	if json.Unmarshal(data, &manifest) != nil || manifest.Schema != model.TCPTargetRegistrySchema || manifest.File != "tcp-targets.json" || manifest.Count != count {
+		return false
+	}
+	hash := sha256.Sum256(snapshot)
+	return manifest.SHA256 == hex.EncodeToString(hash[:])
+}
+
+func writeAtomicSnapshot(output string, candidate []byte) error {
+	if output == "" {
+		return errors.New("snapshot path is empty")
 	}
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
 		return fmt.Errorf("create snapshot directory: %w", err)

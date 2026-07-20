@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,9 +21,15 @@ import (
 //go:embed snapshot/tcp-targets.json
 var embeddedTCPTargets []byte
 
+//go:embed snapshot/manifest.json
+var embeddedTCPTargetManifest []byte
+
 const (
-	TCPTargetRegistryRawURL = "https://raw.githubusercontent.com/oneclickvirt/pingtest/main/model/snapshot/tcp-targets.json"
-	TCPTargetRegistryCDNURL = "https://cdn.spiritlhl.net/" + TCPTargetRegistryRawURL
+	TCPTargetRegistrySchema      = "pingtest.tcp-targets/v1"
+	TCPTargetRegistryRawURL      = "https://raw.githubusercontent.com/oneclickvirt/pingtest/main/model/snapshot/tcp-targets.json"
+	TCPTargetManifestRawURL      = "https://raw.githubusercontent.com/oneclickvirt/pingtest/main/model/snapshot/manifest.json"
+	TCPTargetRegistryCDNURL      = "https://cdn.spiritlhl.net/" + TCPTargetRegistryRawURL
+	TCPTargetManifestRegistryURL = "https://cdn.spiritlhl.net/" + TCPTargetManifestRawURL
 )
 
 // TCPTarget describes an endpoint used by the TCP handshake probe.
@@ -34,8 +42,9 @@ type TCPTarget struct {
 }
 
 type TCPTargetRegistrySource struct {
-	Name string
-	URL  string
+	Name        string
+	URL         string
+	ManifestURL string
 }
 
 type TCPTargetRegistryLoadResult struct {
@@ -46,9 +55,17 @@ type TCPTargetRegistryLoadResult struct {
 
 func DefaultTCPTargetRegistrySources() []TCPTargetRegistrySource {
 	return []TCPTargetRegistrySource{
-		{Name: "cdn", URL: TCPTargetRegistryCDNURL},
-		{Name: "raw", URL: TCPTargetRegistryRawURL},
+		{Name: "cdn", URL: TCPTargetRegistryCDNURL, ManifestURL: TCPTargetManifestRegistryURL},
+		{Name: "raw", URL: TCPTargetRegistryRawURL, ManifestURL: TCPTargetManifestRawURL},
 	}
+}
+
+type TCPTargetManifest struct {
+	Schema      string `json:"schema"`
+	File        string `json:"file"`
+	Count       int    `json:"count"`
+	SHA256      string `json:"sha256"`
+	GeneratedAt string `json:"generated_at"`
 }
 
 // AllTCPTargets returns a copy of the registry formed from the existing
@@ -127,7 +144,7 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 	}
 	var lastErr error
 	for index, source := range sources {
-		data, err := fetchTCPTargetRegistry(ctx, client, source.URL)
+		data, err := loadTCPTargetSnapshot(ctx, client, source)
 		if err != nil {
 			lastErr = fmt.Errorf("load %s TCP target registry: %w", source.Name, err)
 			continue
@@ -139,6 +156,9 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 		}
 		return TCPTargetRegistryLoadResult{Targets: targets, Source: source.Name, Fallback: index > 0}, nil
 	}
+	if err := validateTCPTargetManifest(embeddedTCPTargetManifest, embeddedTCPTargets); err != nil {
+		return TCPTargetRegistryLoadResult{}, fmt.Errorf("validate embedded TCP target manifest: %w", err)
+	}
 	targets, err := decodeTCPTargetRegistry(embeddedTCPTargets, minimum)
 	if err == nil {
 		return TCPTargetRegistryLoadResult{Targets: targets, Source: "embedded", Fallback: true}, nil
@@ -147,6 +167,54 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 		lastErr = errors.New("no TCP target registry sources configured")
 	}
 	return TCPTargetRegistryLoadResult{}, fmt.Errorf("%w; embedded fallback: %v", lastErr, err)
+}
+
+func loadTCPTargetSnapshot(ctx context.Context, client *http.Client, source TCPTargetRegistrySource) ([]byte, error) {
+	if source.ManifestURL == "" {
+		return fetchTCPTargetRegistry(ctx, client, source.URL)
+	}
+	manifestData, err := fetchTCPTargetRegistry(ctx, client, source.ManifestURL)
+	if err != nil {
+		return nil, fmt.Errorf("load manifest: %w", err)
+	}
+	data, err := fetchTCPTargetRegistry(ctx, client, source.URL)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateTCPTargetManifest(manifestData, data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func validateTCPTargetManifest(data, snapshot []byte) error {
+	var manifest TCPTargetManifest
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return fmt.Errorf("decode manifest: %w", err)
+	}
+	if err := ensureTCPTargetJSONEOF(decoder); err != nil {
+		return err
+	}
+	if manifest.Schema != TCPTargetRegistrySchema || manifest.File != "tcp-targets.json" || manifest.Count < 1 {
+		return errors.New("manifest schema, file, or count is invalid")
+	}
+	if _, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err != nil {
+		return fmt.Errorf("manifest generated_at is invalid: %w", err)
+	}
+	hash := sha256.Sum256(snapshot)
+	if !strings.EqualFold(manifest.SHA256, hex.EncodeToString(hash[:])) {
+		return errors.New("manifest SHA-256 does not match snapshot")
+	}
+	targets, err := decodeTCPTargetRegistry(snapshot, manifest.Count)
+	if err != nil {
+		return fmt.Errorf("manifest count validation failed: %w", err)
+	}
+	if len(targets) != manifest.Count {
+		return fmt.Errorf("manifest count %d does not match snapshot count %d", manifest.Count, len(targets))
+	}
+	return nil
 }
 
 func fetchTCPTargetRegistry(ctx context.Context, client *http.Client, endpoint string) ([]byte, error) {
