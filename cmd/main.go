@@ -55,8 +55,8 @@ func main() {
 
 func runCLI(ctx context.Context, args []string, output io.Writer, runner commandRunner) int {
 	var showVersion, help, jsonOutput bool
-	var testMode, target string
-	var attempts, concurrency int
+	var testMode, target, tcpFormat string
+	var attempts, concurrency, tcpDetails int
 	var timeout time.Duration
 	pingtestFlag := flag.NewFlagSet("pingtest", flag.ContinueOnError)
 	pingtestFlag.SetOutput(output)
@@ -68,6 +68,8 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 	pingtestFlag.DurationVar(&timeout, "timeout", 5*time.Second, "TCP 模式单次握手超时")
 	pingtestFlag.IntVar(&concurrency, "concurrency", 16, "TCP 模式最大并发数")
 	pingtestFlag.StringVar(&target, "target", "", "TCP 模式仅测试一个 host[:port] 目标")
+	pingtestFlag.StringVar(&tcpFormat, "tcp-format", string(pt.TCPTextFormatCompact), "TCP 文本输出格式: compact 或 full")
+	pingtestFlag.IntVar(&tcpDetails, "tcp-details", pt.DefaultTCPCompactDetails, "TCP compact 模式最多显示的异常/最慢目标数")
 	pingtestFlag.StringVar(&testMode, "tm", "ori", "测试模式:\n"+
 		"  ori    - 国内三网延迟测试（默认）\n"+
 		"  tgdc   - Telegram 数据中心连通性测试\n"+
@@ -117,8 +119,13 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 	case "web":
 		res = runner.website()
 	case "tcp":
-		if attempts < 1 || concurrency < 1 || timeout <= 0 {
-			fmt.Fprintln(output, "错误: attempts、timeout 和 concurrency 必须大于 0")
+		format := pt.TCPTextFormat(strings.ToLower(strings.TrimSpace(tcpFormat)))
+		if attempts < 1 || concurrency < 1 || timeout <= 0 || tcpDetails < 1 {
+			fmt.Fprintln(output, "错误: attempts、timeout、concurrency 和 tcp-details 必须大于 0")
+			return 2
+		}
+		if format != pt.TCPTextFormatCompact && format != pt.TCPTextFormatFull {
+			fmt.Fprintln(output, "错误: tcp-format 仅支持 compact 或 full")
 			return 2
 		}
 		results, err := runner.tcp(ctx, pt.TCPProbeConfig{Attempts: attempts, Timeout: timeout, Concurrency: concurrency}, target)
@@ -134,7 +141,7 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 			}
 			return 0
 		}
-		res = pt.FormatTCPResults(results)
+		res = pt.FormatTCPResultsWithOptions(results, pt.TCPFormatOptions{Format: format, MaxDetails: tcpDetails})
 	case "china":
 		// 国内三网
 		res = runner.ping()

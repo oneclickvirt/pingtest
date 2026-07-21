@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -239,7 +240,9 @@ func TestFormatTCPResultsSummarizesAndGroupsFailures(t *testing.T) {
 		"失败:5",
 		"Min/Avg/P50/P95/Max",
 		"DNS:1  拒绝:1  超时:1  其他:2",
-		"[first] 2个目标",
+		"类别汇总",
+		"Avg/P95/Max",
+		"异常/最慢目标 3/3",
 		"alpha",
 		"beta",
 		"0/0/1/0",
@@ -257,6 +260,93 @@ func TestFormatTCPResultsSummarizesAndGroupsFailures(t *testing.T) {
 		if strings.Contains(line, "alpha") && strings.Contains(line, "...") {
 			t.Fatalf("latency detail was truncated: %q", line)
 		}
+	}
+}
+
+func TestCompactTCPResultsCapsDetailsAndPrioritizesFailures(t *testing.T) {
+	results := make([]TCPResult, 0, 13)
+	for index := 0; index < 12; index++ {
+		latency := time.Duration(index+1) * time.Millisecond
+		results = append(results, TCPResult{
+			Target:   model.TCPTarget{Name: fmt.Sprintf("normal-%02d", index), Category: "global"},
+			Attempts: 1, Successful: 1, Min: latency, Mean: latency, P50: latency, P95: latency, Max: latency,
+		})
+	}
+	results = append(results, TCPResult{
+		Target: model.TCPTarget{Name: "failed", Category: "global"}, Attempts: 3, Failed: 3,
+		ErrorCounts: map[string]int{TCPErrorDNS: 3},
+	})
+
+	compact := FormatTCPResultsWithOptions(results, TCPFormatOptions{Format: TCPTextFormatCompact, MaxDetails: 3})
+	for _, want := range []string{"类别汇总", "全球", "异常/最慢目标 3/13", "failed", "normal-11", "normal-10"} {
+		if !strings.Contains(compact, want) {
+			t.Errorf("compact output missing %q:\n%s", want, compact)
+		}
+	}
+	if strings.Contains(compact, "normal-00") || strings.Count(compact, "normal-") != 2 {
+		t.Fatalf("compact output did not cap detail rows:\n%s", compact)
+	}
+
+	full := FormatTCPResultsWithOptions(results, TCPFormatOptions{Format: TCPTextFormatFull})
+	if !strings.Contains(full, "完整目标 13/13") {
+		t.Fatalf("full output missing full marker:\n%s", full)
+	}
+	for _, result := range results {
+		if !strings.Contains(full, result.Target.Name) {
+			t.Errorf("full output omitted %q", result.Target.Name)
+		}
+	}
+	if len(strings.Split(compact, "\n")) >= len(strings.Split(full, "\n")) {
+		t.Fatalf("compact output was not shorter: compact=%d full=%d", len(strings.Split(compact, "\n")), len(strings.Split(full, "\n")))
+	}
+}
+
+func TestDefaultCompactRegistryOutputIsBounded(t *testing.T) {
+	targets := model.AllTCPTargets()
+	results := make([]TCPResult, 0, len(targets))
+	categories := make(map[string]struct{})
+	for index, target := range targets {
+		latency := time.Duration(index+1) * time.Millisecond
+		results = append(results, TCPResult{
+			Target: target, Attempts: 3, Successful: 3,
+			Min: latency, Mean: latency, P50: latency, P95: latency, Max: latency,
+		})
+		category := strings.TrimSpace(target.Category)
+		if category == "" {
+			category = "未分类"
+		}
+		categories[category] = struct{}{}
+	}
+	output := FormatTCPResults(results)
+	lines := strings.Split(output, "\n")
+	maximumLines := len(categories) + 15 // summary/table headers + eight detail rows
+	if len(lines) > maximumLines || len(lines) >= len(results) {
+		t.Fatalf("default compact output is not bounded: targets=%d categories=%d lines=%d max=%d", len(results), len(categories), len(lines), maximumLines)
+	}
+	if !strings.Contains(output, fmt.Sprintf("异常/最慢目标 %d/%d", DefaultTCPCompactDetails, len(results))) {
+		t.Fatalf("default detail limit is missing:\n%s", output)
+	}
+	for _, line := range lines {
+		if width := runewidth.StringWidth(line); width > 80 {
+			t.Fatalf("compact registry line width %d exceeds 80: %q", width, line)
+		}
+	}
+}
+
+func TestTCPCategoryLabelLocalizesKnownValuesOnly(t *testing.T) {
+	want := map[string]string{
+		"search": "搜索", "social": "社交", "video": "视频", "ai": "AI", "dev": "开发", "cloud": "云服务",
+		"shopping": "购物", "tool": "工具", "gaming": "游戏", "tech": "科技", "news": "新闻", "global": "全球",
+		"custom-region": "custom-region",
+	}
+	for input, expected := range want {
+		if actual := tcpCategoryLabel(input); actual != expected {
+			t.Errorf("tcpCategoryLabel(%q) = %q, want %q", input, actual, expected)
+		}
+	}
+	output := FormatTCPResults([]TCPResult{{Target: model.TCPTarget{Name: "fixture", Category: "custom-region"}, Attempts: 1, Successful: 1, Mean: time.Millisecond, P95: time.Millisecond, Max: time.Millisecond}})
+	if !strings.Contains(output, "custom-region") || strings.Contains(output, "custom-re...") {
+		t.Fatalf("unknown category was not preserved in compact text:\n%s", output)
 	}
 }
 

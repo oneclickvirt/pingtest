@@ -49,7 +49,7 @@ func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
 	if got := strings.Join(*calls, ","); got != "tcp" {
 		t.Fatalf("tcp dispatch = %q, want tcp", got)
 	}
-	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败 DNS:0", "目标", "成功", "丢包", "fixture", "1/1", "Min/Avg/P50/P95/Max", "1.0/1.0/1.0/1.0/1.0ms"} {
+	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败 DNS:0", "类别汇总", "异常/最慢目标 1/1", "目标", "成功", "丢包", "fixture", "1/1"} {
 		if !strings.Contains(output.String(), value) {
 			t.Errorf("TCP output %q does not contain %q", output.String(), value)
 		}
@@ -57,6 +57,53 @@ func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
 	for _, forbidden := range []string{"success=", "loss=", "errors="} {
 		if strings.Contains(output.String(), forbidden) {
 			t.Errorf("TCP output retained debug field %q: %q", forbidden, output.String())
+		}
+	}
+}
+
+func TestRunCLITCPFullFormat(t *testing.T) {
+	runner, calls := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-tm", "tcp", "-tcp-format", "full"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if got := strings.Join(*calls, ","); got != "tcp" {
+		t.Fatalf("tcp dispatch = %q, want tcp", got)
+	}
+	if !strings.Contains(output.String(), "完整目标 1/1") || strings.Contains(output.String(), "类别汇总") {
+		t.Fatalf("full TCP format was not selected: %q", output.String())
+	}
+}
+
+func TestRunCLITCPCompactDetailLimit(t *testing.T) {
+	runner := commandRunner{tcp: func(_ context.Context, _ pt.TCPProbeConfig, _ string) ([]pt.TCPResult, error) {
+		return []pt.TCPResult{
+			{Target: model.TCPTarget{Name: "fast-a"}, Attempts: 1, Successful: 1, P95: time.Millisecond},
+			{Target: model.TCPTarget{Name: "middle-b"}, Attempts: 1, Successful: 1, P95: 2 * time.Millisecond},
+			{Target: model.TCPTarget{Name: "slow-c"}, Attempts: 1, Successful: 1, P95: 3 * time.Millisecond},
+		}, nil
+	}}
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-tm", "tcp", "-tcp-details", "1"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if !strings.Contains(output.String(), "异常/最慢目标 1/3") || !strings.Contains(output.String(), "slow-c") || strings.Contains(output.String(), "fast-a") || strings.Contains(output.String(), "middle-b") {
+		t.Fatalf("compact detail limit was not applied: %q", output.String())
+	}
+}
+
+func TestRunCLIRejectsInvalidTCPTextOptionsBeforeRunning(t *testing.T) {
+	for _, args := range [][]string{
+		{"-tm", "tcp", "-tcp-format", "verbose"},
+		{"-tm", "tcp", "-tcp-details", "0"},
+	} {
+		runner, calls := offlineRunner()
+		var output bytes.Buffer
+		if exitCode := runCLI(context.Background(), args, &output, runner); exitCode == 0 {
+			t.Fatalf("invalid args %v returned success", args)
+		}
+		if len(*calls) != 0 || !strings.Contains(output.String(), "错误") {
+			t.Fatalf("invalid args scheduled work: args=%v calls=%v output=%q", args, *calls, output.String())
 		}
 	}
 }
