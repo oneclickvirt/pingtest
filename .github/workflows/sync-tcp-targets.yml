@@ -11,6 +11,7 @@ on:
       - ".github/workflows/sync-tcp-targets.yml"
       - "cmd/update-tcp-targets/**"
       - "model/snapshot/**"
+      - "model/model.go"
       - "model/tcp_targets.go"
       - "model/tcp_registry_test.go"
       - "pt/tcp.go"
