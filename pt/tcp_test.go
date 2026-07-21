@@ -181,21 +181,82 @@ func TestRunTCPRegistryUsesMergedProductionTargets(t *testing.T) {
 	}
 }
 
-func TestFormatTCPResultsSortsErrorClasses(t *testing.T) {
-	output := FormatTCPResults([]TCPResult{{
-		Target:      model.TCPTarget{Name: "fixture", Host: "fixture.test", Port: 443},
-		Attempts:    2,
-		Failed:      2,
-		LossPercent: 100,
-		ErrorCounts: map[string]int{TCPErrorTimeout: 1, TCPErrorDNS: 1},
-	}})
-	if !strings.Contains(output, "错误: dns:1 timeout:1") {
-		t.Fatalf("unexpected formatted errors: %q", output)
+func TestFormatTCPResultsSummarizesAndGroupsFailures(t *testing.T) {
+	output := FormatTCPResults([]TCPResult{
+		{
+			Target:     model.TCPTarget{Name: "alpha", Category: "first"},
+			Attempts:   4,
+			Successful: 3,
+			Failed:     1,
+			Min:        time.Millisecond,
+			Mean:       7 * time.Millisecond,
+			P50:        2 * time.Millisecond,
+			P95:        4 * time.Millisecond,
+			Max:        4 * time.Millisecond,
+			Samples: []TCPSample{
+				{Attempt: 1, Duration: time.Millisecond, Success: true},
+				{Attempt: 2, Duration: 2 * time.Millisecond, Success: true},
+				{Attempt: 3, Duration: 4 * time.Millisecond, Success: true},
+				{Attempt: 4, ErrorClass: TCPErrorTimeout},
+			},
+			ErrorCounts: map[string]int{TCPErrorTimeout: 1},
+		},
+		{
+			Target:      model.TCPTarget{Name: "beta", Category: "second"},
+			Attempts:    2,
+			Failed:      2,
+			ErrorCounts: map[string]int{TCPErrorDNS: 1, TCPErrorRefused: 1},
+		},
+		{
+			Target:     model.TCPTarget{Name: "gamma", Category: "first"},
+			Attempts:   3,
+			Successful: 1,
+			Failed:     2,
+			Min:        8 * time.Millisecond,
+			Mean:       8 * time.Millisecond,
+			P50:        8 * time.Millisecond,
+			P95:        8 * time.Millisecond,
+			Max:        8 * time.Millisecond,
+			Samples: []TCPSample{
+				{Attempt: 1, Duration: 8 * time.Millisecond, Success: true},
+				{Attempt: 2, ErrorClass: TCPErrorNetwork},
+				{Attempt: 3, ErrorClass: TCPErrorCanceled},
+			},
+			ErrorCounts: map[string]int{TCPErrorNetwork: 1, TCPErrorCanceled: 1},
+		},
+	})
+	for _, want := range []string{
+		"汇总 目标:3",
+		"握手:4/9",
+		"成功率:44.4%",
+		"失败:5",
+		"Min/Avg/P50/P95/Max",
+		"DNS:1  拒绝:1  超时:1  其他:2",
+		"[first] 2个目标",
+		"alpha",
+		"beta",
+		"0/0/1/0",
+		"1/1/0/0",
+		"0/0/0/2",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("formatted output missing %q: %q", want, output)
+		}
 	}
 	for _, line := range strings.Split(output, "\n") {
 		if width := runewidth.StringWidth(line); width > 80 {
 			t.Fatalf("formatted line width %d exceeds 80: %q", width, line)
 		}
+		if strings.Contains(line, "alpha") && strings.Contains(line, "...") {
+			t.Fatalf("latency detail was truncated: %q", line)
+		}
+	}
+}
+
+func TestFormatTCPResultsKeepsAggregateJSONFieldsUnchanged(t *testing.T) {
+	result := TCPResult{Target: model.TCPTarget{Name: "fixture"}, Attempts: 2, Successful: 1, Failed: 1, Mean: time.Millisecond, ErrorCounts: map[string]int{TCPErrorDNS: 1}}
+	if _, err := json.Marshal(result); err != nil {
+		t.Fatalf("TCPResult JSON compatibility changed: %v", err)
 	}
 }
 

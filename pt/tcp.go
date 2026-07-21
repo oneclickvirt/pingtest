@@ -219,47 +219,177 @@ func FormatTCPResults(results []TCPResult) string {
 	}
 	var output strings.Builder
 	const (
-		nameWidth = 28
-		okWidth   = 9
-		lossWidth = 9
-		meanWidth = 11
-		p95Width  = 11
+		nameWidth    = 16
+		successWidth = 7
+		lossWidth    = 7
+		latencyWidth = 31
+		errorsWidth  = 11
 	)
-	fmt.Fprintf(&output, "%s  %s  %s  %s  %s\n",
-		padTCPCell("目标", nameWidth), padTCPCell("成功", okWidth), padTCPCell("丢包", lossWidth),
-		padTCPCell("平均", meanWidth), padTCPCell("P95", p95Width))
+	summary := summarizeTCPResults(results)
+	fmt.Fprintf(&output, "汇总 目标:%d  握手:%d/%d  成功率:%.1f%%  失败:%d\n",
+		summary.Targets, summary.Successful, summary.Attempts, summary.SuccessRate, summary.Failed)
+	fmt.Fprintf(&output, "延迟 Min/Avg/P50/P95/Max: %s\n", formatTCPDurationSet(summary.Min, summary.Mean, summary.P50, summary.P95, summary.Max))
+	fmt.Fprintf(&output, "失败 DNS:%d  拒绝:%d  超时:%d  其他:%d\n", summary.DNS, summary.Refused, summary.Timeout, summary.Other)
+	fmt.Fprintf(&output, "%s  %s  %s  %s  %s\n", padTCPCell("目标", nameWidth), padTCPCell("成功", successWidth), padTCPCell("丢包", lossWidth), padTCPCell("Min/Avg/P50/P95/Max", latencyWidth), padTCPCell("D/R/T/O", errorsWidth))
+
+	groups := make([]string, 0)
+	grouped := make(map[string][]TCPResult)
 	for _, result := range results {
-		name := strings.TrimSpace(result.Target.Name)
-		if name == "" {
-			name = net.JoinHostPort(result.Target.Host, fmt.Sprintf("%d", result.Target.Port))
+		category := strings.TrimSpace(result.Target.Category)
+		if category == "" {
+			category = "未分类"
 		}
-		fmt.Fprintf(&output, "%s  %s  %s  %s  %s\n",
-			padTCPCell(name, nameWidth), padTCPCell(fmt.Sprintf("%d/%d", result.Successful, result.Attempts), okWidth),
-			padTCPCell(fmt.Sprintf("%.1f%%", result.LossPercent), lossWidth), padTCPCell(formatTCPDuration(result.Mean), meanWidth),
-			padTCPCell(formatTCPDuration(result.P95), p95Width),
-		)
-		classes := make([]string, 0, len(result.ErrorCounts))
-		for class := range result.ErrorCounts {
-			classes = append(classes, class)
+		if _, exists := grouped[category]; !exists {
+			groups = append(groups, category)
 		}
-		sort.Strings(classes)
-		errorsText := "-"
-		var errorsBuilder strings.Builder
-		for classIndex, class := range classes {
-			if classIndex > 0 {
-				errorsBuilder.WriteByte(' ')
-			}
-			fmt.Fprintf(&errorsBuilder, "%s:%d", class, result.ErrorCounts[class])
-		}
-		if errorsBuilder.Len() > 0 {
-			errorsText = errorsBuilder.String()
-		}
-		detail := fmt.Sprintf("  范围: %s - %s  P50: %s  错误: %s",
-			formatTCPDuration(result.Min), formatTCPDuration(result.Max), formatTCPDuration(result.P50), errorsText)
-		output.WriteString(truncateTCPCell(detail, 80))
-		output.WriteByte('\n')
+		grouped[category] = append(grouped[category], result)
 	}
-	return strings.TrimSuffix(output.String(), "\n")
+	for _, category := range groups {
+		fmt.Fprintf(&output, "[%s] %d个目标\n", category, len(grouped[category]))
+		for _, result := range grouped[category] {
+			classes := classifyTCPResult(result)
+			fmt.Fprintf(&output, "%s  %s  %s  %s  %s\n",
+				padTCPCell(tcpResultName(result), nameWidth),
+				padTCPCell(fmt.Sprintf("%d/%d", result.Successful, result.Attempts), successWidth),
+				padTCPCell(fmt.Sprintf("%.1f%%", tcpLossPercent(result)), lossWidth),
+				padTCPCell(formatTCPDurationSet(result.Min, result.Mean, result.P50, result.P95, result.Max), latencyWidth),
+				padTCPCell(fmt.Sprintf("%d/%d/%d/%d", classes.DNS, classes.Refused, classes.Timeout, classes.Other), errorsWidth),
+			)
+		}
+	}
+	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
+	for index := range lines {
+		lines[index] = strings.TrimRight(lines[index], " ")
+	}
+	return strings.Join(lines, "\n")
+}
+
+type tcpErrorSummary struct {
+	DNS, Refused, Timeout, Other int
+}
+
+type tcpResultsSummary struct {
+	Targets, Attempts, Successful, Failed int
+	SuccessRate                           float64
+	tcpErrorSummary
+	Min, Mean, P50, P95, Max time.Duration
+}
+
+func summarizeTCPResults(results []TCPResult) tcpResultsSummary {
+	summary := tcpResultsSummary{Targets: len(results)}
+	latencies := make([]time.Duration, 0)
+	allSamples := true
+	for _, result := range results {
+		attempts := result.Attempts
+		if attempts < result.Successful {
+			attempts = result.Successful
+		}
+		summary.Attempts += attempts
+		summary.Successful += result.Successful
+		classes := classifyTCPResult(result)
+		summary.DNS += classes.DNS
+		summary.Refused += classes.Refused
+		summary.Timeout += classes.Timeout
+		summary.Other += classes.Other
+		successSamples := 0
+		for _, sample := range result.Samples {
+			if sample.Success {
+				latencies = append(latencies, sample.Duration)
+				successSamples++
+			}
+		}
+		if successSamples < result.Successful {
+			allSamples = false
+		}
+	}
+	summary.Failed = summary.DNS + summary.Refused + summary.Timeout + summary.Other
+	if summary.Attempts > 0 {
+		summary.SuccessRate = float64(summary.Successful) * 100 / float64(summary.Attempts)
+	}
+	if len(latencies) > 0 {
+		sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+		summary.Min = latencies[0]
+		summary.Max = latencies[len(latencies)-1]
+		var total time.Duration
+		for _, latency := range latencies {
+			total += latency
+		}
+		summary.Mean = total / time.Duration(len(latencies))
+		summary.P50 = percentile(latencies, 0.50)
+		summary.P95 = percentile(latencies, 0.95)
+	}
+	if !allSamples {
+		// A caller may provide aggregate TCPResult values without Samples. Keep
+		// those values visible instead of pretending the derived percentiles are exact.
+		summary.Min, summary.P50, summary.P95, summary.Max = 0, 0, 0, 0
+		weighted := func(selectValue func(TCPResult) time.Duration) time.Duration {
+			var total time.Duration
+			var count int
+			for _, result := range results {
+				if result.Successful <= 0 {
+					continue
+				}
+				total += selectValue(result) * time.Duration(result.Successful)
+				count += result.Successful
+			}
+			if count == 0 {
+				return 0
+			}
+			return total / time.Duration(count)
+		}
+		for _, result := range results {
+			if result.Successful <= 0 {
+				continue
+			}
+			if result.Min > 0 && (summary.Min == 0 || result.Min < summary.Min) {
+				summary.Min = result.Min
+			}
+			if result.Max > summary.Max {
+				summary.Max = result.Max
+			}
+		}
+		summary.Mean = weighted(func(result TCPResult) time.Duration { return result.Mean })
+		summary.P50 = weighted(func(result TCPResult) time.Duration { return result.P50 })
+		summary.P95 = weighted(func(result TCPResult) time.Duration { return result.P95 })
+	}
+	return summary
+}
+
+func classifyTCPResult(result TCPResult) tcpErrorSummary {
+	classes := tcpErrorSummary{
+		DNS:     result.ErrorCounts[TCPErrorDNS],
+		Refused: result.ErrorCounts[TCPErrorRefused],
+		Timeout: result.ErrorCounts[TCPErrorTimeout],
+	}
+	classified := classes.DNS + classes.Refused + classes.Timeout
+	for class, count := range result.ErrorCounts {
+		if class != TCPErrorDNS && class != TCPErrorRefused && class != TCPErrorTimeout {
+			classes.Other += count
+		}
+	}
+	expectedFailures := result.Attempts - result.Successful
+	if expectedFailures < result.Failed {
+		expectedFailures = result.Failed
+	}
+	if expectedFailures > classified+classes.Other {
+		classes.Other += expectedFailures - classified - classes.Other
+	}
+	return classes
+}
+
+func tcpResultName(result TCPResult) string {
+	name := strings.TrimSpace(result.Target.Name)
+	if name == "" {
+		name = net.JoinHostPort(result.Target.Host, fmt.Sprintf("%d", result.Target.Port))
+	}
+	return name
+}
+
+func tcpLossPercent(result TCPResult) float64 {
+	if result.Attempts <= 0 {
+		return 0
+	}
+	return float64(result.Attempts-result.Successful) * 100 / float64(result.Attempts)
 }
 
 func padTCPCell(value string, width int) string {
@@ -281,17 +411,32 @@ func truncateTCPCell(value string, width int) string {
 	return runewidth.Truncate(value, width-3, "") + "..."
 }
 
-func formatTCPDuration(value time.Duration) string {
-	if value <= 0 {
+func formatTCPDurationSet(values ...time.Duration) string {
+	max := time.Duration(0)
+	for _, value := range values {
+		if value > max {
+			max = value
+		}
+	}
+	if max <= 0 {
 		return "-"
 	}
-	if value >= time.Second {
-		return fmt.Sprintf("%.2fs", value.Seconds())
+	unit := time.Microsecond
+	suffix := "us"
+	if max >= time.Second {
+		unit, suffix = time.Second, "s"
+	} else if max >= time.Millisecond {
+		unit, suffix = time.Millisecond, "ms"
 	}
-	if value >= time.Millisecond {
-		return fmt.Sprintf("%.2fms", float64(value)/float64(time.Millisecond))
+	parts := make([]string, len(values))
+	for index, value := range values {
+		if value <= 0 {
+			parts[index] = "-"
+			continue
+		}
+		parts[index] = fmt.Sprintf("%.1f", float64(value)/float64(unit))
 	}
-	return fmt.Sprintf("%.2fus", float64(value)/float64(time.Microsecond))
+	return strings.Join(parts, "/") + suffix
 }
 
 func (result *TCPResult) recordSuccess(attempt int, duration time.Duration) {

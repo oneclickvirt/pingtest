@@ -49,7 +49,7 @@ func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
 	if got := strings.Join(*calls, ","); got != "tcp" {
 		t.Fatalf("tcp dispatch = %q, want tcp", got)
 	}
-	for _, value := range []string{"目标", "成功", "fixture", "1/1", "P95", "1.00ms"} {
+	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败 DNS:0", "目标", "成功", "丢包", "fixture", "1/1", "Min/Avg/P50/P95/Max", "1.0/1.0/1.0/1.0/1.0ms"} {
 		if !strings.Contains(output.String(), value) {
 			t.Errorf("TCP output %q does not contain %q", output.String(), value)
 		}
