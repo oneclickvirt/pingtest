@@ -13,6 +13,8 @@ on:
       - "model/snapshot/**"
       - "model/tcp_targets.go"
       - "model/tcp_registry_test.go"
+      - "pt/tcp.go"
+      - "pt/tcp_test.go"
       - "go.mod"
       - "go.sum"
 

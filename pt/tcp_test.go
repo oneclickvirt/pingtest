@@ -57,6 +57,13 @@ func TestRunTCPProbeCalculatesMetrics(t *testing.T) {
 	}
 }
 
+func TestPercentileRoundsToNearestNanosecond(t *testing.T) {
+	values := []time.Duration{0, time.Nanosecond}
+	if got := percentile(values, 0.50); got != time.Nanosecond {
+		t.Fatalf("p50 = %s, want %s", got, time.Nanosecond)
+	}
+}
+
 func TestRunTCPProbeClassifiesFailures(t *testing.T) {
 	errorsByAttempt := []error{
 		&net.DNSError{Err: "no such host", Name: "missing.test"},
