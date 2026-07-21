@@ -22,8 +22,15 @@ func TestRunICMPProbesPreservesOrderAndMetrics(t *testing.T) {
 func TestRunICMPProbesHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	results := RunICMPProbes(ctx, []ICMPTarget{{ID: "a", Host: "a.test"}}, ICMPProbeConfig{})
-	if len(results) != 1 || results[0].Status != "canceled" {
+	called := false
+	results := RunICMPProbes(ctx, []ICMPTarget{{ID: "a", Host: "a.test"}}, ICMPProbeConfig{Count: 3, Probe: func(context.Context, ICMPTarget, int, time.Duration) ICMPResult {
+		called = true
+		return ICMPResult{Status: "unexpected"}
+	}})
+	if called {
+		t.Fatal("probe was called after context cancellation")
+	}
+	if len(results) != 1 || results[0].Status != "canceled" || results[0].Sent != 3 || results[0].LossPercent != 100 || results[0].Error != context.Canceled.Error() {
 		t.Fatalf("unexpected canceled ICMP results: %+v", results)
 	}
 }

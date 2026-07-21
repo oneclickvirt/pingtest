@@ -57,6 +57,10 @@ func RunICMPProbes(ctx context.Context, targets []ICMPTarget, config ICMPProbeCo
 		config.Probe = probeICMPTarget
 	}
 	results := make([]ICMPResult, len(targets))
+	if err := ctx.Err(); err != nil {
+		markPendingICMP(results, targets, config.Count, err)
+		return results
+	}
 	jobs := make(chan int)
 	workers := min(config.Concurrency, len(targets))
 	var wait sync.WaitGroup
@@ -65,6 +69,10 @@ func RunICMPProbes(ctx context.Context, targets []ICMPTarget, config ICMPProbeCo
 		go func() {
 			defer wait.Done()
 			for index := range jobs {
+				if err := ctx.Err(); err != nil {
+					results[index] = icmpContextResult(targets[index], config.Count, err)
+					continue
+				}
 				results[index] = config.Probe(ctx, targets[index], config.Count, config.Timeout)
 			}
 		}()
@@ -75,7 +83,7 @@ func RunICMPProbes(ctx context.Context, targets []ICMPTarget, config ICMPProbeCo
 		case <-ctx.Done():
 			close(jobs)
 			wait.Wait()
-			markPendingICMP(results, targets, ctx.Err())
+			markPendingICMP(results, targets, config.Count, ctx.Err())
 			return results
 		}
 	}
@@ -86,6 +94,9 @@ func RunICMPProbes(ctx context.Context, targets []ICMPTarget, config ICMPProbeCo
 
 func probeICMPTarget(ctx context.Context, target ICMPTarget, count int, timeout time.Duration) ICMPResult {
 	result := ICMPResult{Target: target, Status: "unavailable", Sent: count, LossPercent: 100}
+	if err := ctx.Err(); err != nil {
+		return icmpContextResult(target, count, err)
+	}
 	if strings.TrimSpace(target.Host) == "" {
 		result.Error = "missing host"
 		return result
@@ -129,13 +140,17 @@ func probeICMPTarget(ctx context.Context, target ICMPTarget, count int, timeout 
 	return result
 }
 
-func markPendingICMP(results []ICMPResult, targets []ICMPTarget, err error) {
+func markPendingICMP(results []ICMPResult, targets []ICMPTarget, count int, err error) {
 	for index := range results {
 		if results[index].Target.Host != "" {
 			continue
 		}
-		results[index] = ICMPResult{Target: targets[index], Status: icmpContextStatus(err), Error: err.Error()}
+		results[index] = icmpContextResult(targets[index], count, err)
 	}
+}
+
+func icmpContextResult(target ICMPTarget, count int, err error) ICMPResult {
+	return ICMPResult{Target: target, Status: icmpContextStatus(err), Sent: count, LossPercent: 100, Error: err.Error()}
 }
 
 func icmpContextStatus(err error) string {
