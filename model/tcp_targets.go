@@ -51,6 +51,14 @@ type TCPTargetRegistryLoadResult struct {
 	Targets  []TCPTarget
 	Source   string
 	Fallback bool
+	Metadata RegistryMetadata
+}
+
+type RegistryMetadata struct {
+	Schema      string `json:"schema"`
+	Count       int    `json:"count"`
+	SHA256      string `json:"sha256"`
+	GeneratedAt string `json:"generated_at,omitempty"`
 }
 
 func DefaultTCPTargetRegistrySources() []TCPTargetRegistrySource {
@@ -144,7 +152,7 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 	}
 	var lastErr error
 	for index, source := range sources {
-		data, err := loadTCPTargetSnapshot(ctx, client, source)
+		data, metadata, err := loadTCPTargetSnapshot(ctx, client, source)
 		if err != nil {
 			lastErr = fmt.Errorf("load %s TCP target registry: %w", source.Name, err)
 			continue
@@ -154,14 +162,18 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 			lastErr = fmt.Errorf("validate %s TCP target registry: %w", source.Name, err)
 			continue
 		}
-		return TCPTargetRegistryLoadResult{Targets: targets, Source: source.Name, Fallback: index > 0}, nil
+		if metadata.Count == 0 {
+			metadata = tcpTargetRegistryMetadata(data, targets)
+		}
+		return TCPTargetRegistryLoadResult{Targets: targets, Source: source.Name, Fallback: index > 0, Metadata: metadata}, nil
 	}
-	if err := validateTCPTargetManifest(embeddedTCPTargetManifest, embeddedTCPTargets); err != nil {
+	metadata, err := validateTCPTargetManifest(embeddedTCPTargetManifest, embeddedTCPTargets)
+	if err != nil {
 		return TCPTargetRegistryLoadResult{}, fmt.Errorf("validate embedded TCP target manifest: %w", err)
 	}
 	targets, err := decodeTCPTargetRegistry(embeddedTCPTargets, minimum)
 	if err == nil {
-		return TCPTargetRegistryLoadResult{Targets: targets, Source: "embedded", Fallback: true}, nil
+		return TCPTargetRegistryLoadResult{Targets: targets, Source: "embedded", Fallback: true, Metadata: metadata}, nil
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no TCP target registry sources configured")
@@ -169,52 +181,59 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 	return TCPTargetRegistryLoadResult{}, fmt.Errorf("%w; embedded fallback: %v", lastErr, err)
 }
 
-func loadTCPTargetSnapshot(ctx context.Context, client *http.Client, source TCPTargetRegistrySource) ([]byte, error) {
+func loadTCPTargetSnapshot(ctx context.Context, client *http.Client, source TCPTargetRegistrySource) ([]byte, RegistryMetadata, error) {
 	if source.ManifestURL == "" {
-		return fetchTCPTargetRegistry(ctx, client, source.URL)
+		data, err := fetchTCPTargetRegistry(ctx, client, source.URL)
+		return data, RegistryMetadata{}, err
 	}
 	manifestData, err := fetchTCPTargetRegistry(ctx, client, source.ManifestURL)
 	if err != nil {
-		return nil, fmt.Errorf("load manifest: %w", err)
+		return nil, RegistryMetadata{}, fmt.Errorf("load manifest: %w", err)
 	}
 	data, err := fetchTCPTargetRegistry(ctx, client, source.URL)
 	if err != nil {
-		return nil, err
+		return nil, RegistryMetadata{}, err
 	}
-	if err := validateTCPTargetManifest(manifestData, data); err != nil {
-		return nil, err
+	metadata, err := validateTCPTargetManifest(manifestData, data)
+	if err != nil {
+		return nil, RegistryMetadata{}, err
 	}
-	return data, nil
+	return data, metadata, nil
 }
 
-func validateTCPTargetManifest(data, snapshot []byte) error {
+func validateTCPTargetManifest(data, snapshot []byte) (RegistryMetadata, error) {
 	var manifest TCPTargetManifest
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&manifest); err != nil {
-		return fmt.Errorf("decode manifest: %w", err)
+		return RegistryMetadata{}, fmt.Errorf("decode manifest: %w", err)
 	}
 	if err := ensureTCPTargetJSONEOF(decoder); err != nil {
-		return err
+		return RegistryMetadata{}, err
 	}
 	if manifest.Schema != TCPTargetRegistrySchema || manifest.File != "tcp-targets.json" || manifest.Count < 1 {
-		return errors.New("manifest schema, file, or count is invalid")
+		return RegistryMetadata{}, errors.New("manifest schema, file, or count is invalid")
 	}
 	if _, err := time.Parse(time.RFC3339, manifest.GeneratedAt); err != nil {
-		return fmt.Errorf("manifest generated_at is invalid: %w", err)
+		return RegistryMetadata{}, fmt.Errorf("manifest generated_at is invalid: %w", err)
 	}
 	hash := sha256.Sum256(snapshot)
 	if !strings.EqualFold(manifest.SHA256, hex.EncodeToString(hash[:])) {
-		return errors.New("manifest SHA-256 does not match snapshot")
+		return RegistryMetadata{}, errors.New("manifest SHA-256 does not match snapshot")
 	}
 	targets, err := decodeTCPTargetRegistry(snapshot, manifest.Count)
 	if err != nil {
-		return fmt.Errorf("manifest count validation failed: %w", err)
+		return RegistryMetadata{}, fmt.Errorf("manifest count validation failed: %w", err)
 	}
 	if len(targets) != manifest.Count {
-		return fmt.Errorf("manifest count %d does not match snapshot count %d", manifest.Count, len(targets))
+		return RegistryMetadata{}, fmt.Errorf("manifest count %d does not match snapshot count %d", manifest.Count, len(targets))
 	}
-	return nil
+	return RegistryMetadata{Schema: manifest.Schema, Count: manifest.Count, SHA256: strings.ToLower(manifest.SHA256), GeneratedAt: manifest.GeneratedAt}, nil
+}
+
+func tcpTargetRegistryMetadata(snapshot []byte, targets []TCPTarget) RegistryMetadata {
+	hash := sha256.Sum256(snapshot)
+	return RegistryMetadata{Schema: TCPTargetRegistrySchema, Count: len(targets), SHA256: hex.EncodeToString(hash[:])}
 }
 
 func fetchTCPTargetRegistry(ctx context.Context, client *http.Client, endpoint string) ([]byte, error) {

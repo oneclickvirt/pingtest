@@ -60,6 +60,9 @@ func TestLoadTCPTargetRegistryRejectsBadManifestAndUsesNextSource(t *testing.T) 
 	if err != nil || loaded.Source != "raw" || !loaded.Fallback {
 		t.Fatalf("unexpected manifest fallback: %+v, %v", loaded, err)
 	}
+	if loaded.Metadata.Schema != TCPTargetRegistrySchema || loaded.Metadata.Count != 1 || loaded.Metadata.SHA256 != manifest.SHA256 {
+		t.Fatalf("manifest metadata missing: %+v", loaded.Metadata)
+	}
 }
 
 func TestLoadTCPTargetRegistryUsesEmbeddedFallback(t *testing.T) {
@@ -69,6 +72,9 @@ func TestLoadTCPTargetRegistryUsesEmbeddedFallback(t *testing.T) {
 	}
 	if loaded.Source != "embedded" || !loaded.Fallback || len(loaded.Targets) < 10 {
 		t.Fatalf("unexpected embedded result: %+v", loaded)
+	}
+	if loaded.Metadata.Schema != TCPTargetRegistrySchema || loaded.Metadata.Count < 10 || loaded.Metadata.Count > len(loaded.Targets) || loaded.Metadata.GeneratedAt == "" || len(loaded.Metadata.SHA256) != 64 {
+		t.Fatalf("unexpected embedded metadata: %+v", loaded.Metadata)
 	}
 }
 
