@@ -70,8 +70,10 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 	pingtestFlag.DurationVar(&timeout, "timeout", 5*time.Second, "TCP 模式单次握手超时")
 	pingtestFlag.IntVar(&concurrency, "concurrency", 16, "TCP 模式最大并发数")
 	pingtestFlag.StringVar(&target, "target", "", "TCP 模式仅测试一个 host[:port] 目标")
-	pingtestFlag.StringVar(&tcpFormat, "tcp-format", string(pt.TCPTextFormatCompact), "TCP 文本输出格式: compact 或 full")
-	pingtestFlag.IntVar(&tcpDetails, "tcp-details", pt.DefaultTCPCompactDetails, "兼容参数；TCP 文本始终显示全部平台")
+	// Kept for command-line compatibility with earlier releases. TCP text now
+	// always uses the complete two-column platform view.
+	pingtestFlag.StringVar(&tcpFormat, "tcp-format", string(pt.TCPTextFormatCompact), "兼容参数: compact 或 full；当前均显示完整双列表格")
+	pingtestFlag.IntVar(&tcpDetails, "tcp-details", pt.DefaultTCPCompactDetails, "兼容参数；当前 TCP 文本始终显示全部平台")
 	pingtestFlag.StringVar(&language, "l", "zh", "输出语言与目标范围: zh 或 en")
 	pingtestFlag.StringVar(&pingSort, "ping-sort", string(model.PingSortLatency), "Ping 排序: latency 或 name")
 	pingtestFlag.StringVar(&pingScope, "ping-scope", string(model.PingScopeAuto), "Ping 目标范围: auto、china 或 international")
@@ -184,8 +186,7 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 			fmt.Fprintln(output, "错误: 英文模式不运行中国大陆目标，请使用 -tm global")
 			return 2
 		}
-		// 国内三网
-		res = runPing()
+		res = strings.Join([]string{runPing(), runner.telegram(), runner.website()}, "\n")
 	case "global":
 		// TG + 网站（不含三网）
 		res1 := runner.telegram()

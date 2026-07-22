@@ -106,6 +106,22 @@ func TestRunCLIEnglishPingUsesInternationalAutoScope(t *testing.T) {
 	}
 }
 
+func TestRunCLIChinaModeRunsAllDocumentedSections(t *testing.T) {
+	runner, calls := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-tm", "china"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if got := strings.Join(*calls, ","); got != "ping,telegram,website" {
+		t.Fatalf("china dispatch = %q", got)
+	}
+	for _, section := range []string{"ping-result", "telegram-result", "website-result"} {
+		if !strings.Contains(output.String(), section) {
+			t.Fatalf("china output is missing %q: %q", section, output.String())
+		}
+	}
+}
+
 func TestRunCLIRejectsInvalidTCPTextOptionsBeforeRunning(t *testing.T) {
 	for _, args := range [][]string{
 		{"-tm", "tcp", "-tcp-format", "verbose"},
