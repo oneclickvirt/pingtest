@@ -240,9 +240,8 @@ func TestFormatTCPResultsSummarizesAndGroupsFailures(t *testing.T) {
 		"失败:5",
 		"Min/Avg/P50/P95/Max",
 		"DNS:1  拒绝:1  超时:1  其他:2",
-		"类别汇总",
-		"Avg/P95/Max",
-		"异常/最慢目标 3/3",
+		"完整目标 3/3",
+		"平台 | 成功/尝试 | 丢包",
 		"alpha",
 		"beta",
 		"0/0/1/0",
@@ -263,7 +262,7 @@ func TestFormatTCPResultsSummarizesAndGroupsFailures(t *testing.T) {
 	}
 }
 
-func TestCompactTCPResultsCapsDetailsAndPrioritizesFailures(t *testing.T) {
+func TestCompactTCPResultsShowsAllPlatformsAndSupportsLatencyOrder(t *testing.T) {
 	results := make([]TCPResult, 0, 13)
 	for index := 0; index < 12; index++ {
 		latency := time.Duration(index+1) * time.Millisecond
@@ -277,14 +276,14 @@ func TestCompactTCPResultsCapsDetailsAndPrioritizesFailures(t *testing.T) {
 		ErrorCounts: map[string]int{TCPErrorDNS: 3},
 	})
 
-	compact := FormatTCPResultsWithOptions(results, TCPFormatOptions{Format: TCPTextFormatCompact, MaxDetails: 3})
-	for _, want := range []string{"类别汇总", "全球", "异常/最慢目标 3/13", "failed", "normal-11", "normal-10"} {
+	compact := FormatTCPResultsWithOptions(results, TCPFormatOptions{Format: TCPTextFormatCompact, MaxDetails: 3, Sort: model.TCPSortLatency})
+	for _, want := range []string{"完整目标 13/13", "全球", "failed", "normal-11", "normal-10", "normal-00"} {
 		if !strings.Contains(compact, want) {
 			t.Errorf("compact output missing %q:\n%s", want, compact)
 		}
 	}
-	if strings.Contains(compact, "normal-00") || strings.Count(compact, "normal-") != 2 {
-		t.Fatalf("compact output did not cap detail rows:\n%s", compact)
+	if strings.Count(compact, "normal-") != 12 {
+		t.Fatalf("compact output omitted platforms:\n%s", compact)
 	}
 
 	full := FormatTCPResultsWithOptions(results, TCPFormatOptions{Format: TCPTextFormatFull})
@@ -296,12 +295,9 @@ func TestCompactTCPResultsCapsDetailsAndPrioritizesFailures(t *testing.T) {
 			t.Errorf("full output omitted %q", result.Target.Name)
 		}
 	}
-	if len(strings.Split(compact, "\n")) >= len(strings.Split(full, "\n")) {
-		t.Fatalf("compact output was not shorter: compact=%d full=%d", len(strings.Split(compact, "\n")), len(strings.Split(full, "\n")))
-	}
 }
 
-func TestDefaultCompactRegistryOutputIsBounded(t *testing.T) {
+func TestDefaultRegistryOutputIncludesEveryPlatformInTwoColumns(t *testing.T) {
 	targets := model.AllTCPTargets()
 	results := make([]TCPResult, 0, len(targets))
 	categories := make(map[string]struct{})
@@ -319,12 +315,13 @@ func TestDefaultCompactRegistryOutputIsBounded(t *testing.T) {
 	}
 	output := FormatTCPResults(results)
 	lines := strings.Split(output, "\n")
-	maximumLines := len(categories) + 15 // summary/table headers + eight detail rows
-	if len(lines) > maximumLines || len(lines) >= len(results) {
-		t.Fatalf("default compact output is not bounded: targets=%d categories=%d lines=%d max=%d", len(results), len(categories), len(lines), maximumLines)
+	if !strings.Contains(output, fmt.Sprintf("完整目标 %d/%d", len(results), len(results))) {
+		t.Fatalf("complete target marker is missing:\n%s", output)
 	}
-	if !strings.Contains(output, fmt.Sprintf("异常/最慢目标 %d/%d", DefaultTCPCompactDetails, len(results))) {
-		t.Fatalf("default detail limit is missing:\n%s", output)
+	for _, result := range results {
+		if !strings.Contains(output, tcpResultName(result)) {
+			t.Fatalf("default output omitted %q", tcpResultName(result))
+		}
 	}
 	for _, line := range lines {
 		if width := runewidth.StringWidth(line); width > 80 {

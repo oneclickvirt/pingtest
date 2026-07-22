@@ -54,6 +54,14 @@ type TCPTargetRegistryLoadResult struct {
 	Metadata RegistryMetadata
 }
 
+// TCPSort controls complete TCP text output ordering.
+type TCPSort string
+
+const (
+	TCPSortName    TCPSort = "name"
+	TCPSortLatency TCPSort = "latency"
+)
+
 type RegistryMetadata struct {
 	Schema      string `json:"schema"`
 	Count       int    `json:"count"`
@@ -154,12 +162,12 @@ func LoadTCPTargetRegistry(ctx context.Context, client *http.Client, sources []T
 	for index, source := range sources {
 		data, metadata, err := loadTCPTargetSnapshot(ctx, client, source)
 		if err != nil {
-			lastErr = fmt.Errorf("load %s TCP target registry: %w", source.Name, err)
+			lastErr = fmt.Errorf("load %s TCP target registry: %w", tcpRegistrySourceLabel(source.Name), err)
 			continue
 		}
 		targets, err := decodeTCPTargetRegistry(data, minimum)
 		if err != nil {
-			lastErr = fmt.Errorf("validate %s TCP target registry: %w", source.Name, err)
+			lastErr = fmt.Errorf("validate %s TCP target registry: %w", tcpRegistrySourceLabel(source.Name), err)
 			continue
 		}
 		if metadata.Count == 0 {
@@ -243,19 +251,35 @@ func fetchTCPTargetRegistry(ctx context.Context, client *http.Client, endpoint s
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("create registry request failed")
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("User-Agent", "oneclickvirt-pingtest/tcp-target-registry-v1")
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, errors.New("registry request failed")
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d", response.StatusCode)
 	}
-	return io.ReadAll(io.LimitReader(response.Body, 2<<20))
+	data, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
+	if err != nil {
+		return nil, errors.New("registry response read failed")
+	}
+	return data, nil
+}
+
+func tcpRegistrySourceLabel(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "cdn", "raw":
+		return strings.ToLower(strings.TrimSpace(name))
+	default:
+		return "remote"
+	}
 }
 
 func decodeTCPTargetRegistry(data []byte, minimum int) ([]TCPTarget, error) {

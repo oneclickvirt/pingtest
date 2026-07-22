@@ -49,7 +49,7 @@ func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
 	if got := strings.Join(*calls, ","); got != "tcp" {
 		t.Fatalf("tcp dispatch = %q, want tcp", got)
 	}
-	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败 DNS:0", "类别汇总", "异常/最慢目标 1/1", "目标", "成功", "丢包", "fixture", "1/1"} {
+	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败 DNS:0", "完整目标 1/1", "平台", "成功/尝试", "丢包", "Min/Avg/P50/P95/Max", "fixture", "1/1"} {
 		if !strings.Contains(output.String(), value) {
 			t.Errorf("TCP output %q does not contain %q", output.String(), value)
 		}
@@ -75,7 +75,7 @@ func TestRunCLITCPFullFormat(t *testing.T) {
 	}
 }
 
-func TestRunCLITCPCompactDetailLimit(t *testing.T) {
+func TestRunCLITCPCompactCompatibilityStillShowsEveryPlatform(t *testing.T) {
 	runner := commandRunner{tcp: func(_ context.Context, _ pt.TCPProbeConfig, _ string) ([]pt.TCPResult, error) {
 		return []pt.TCPResult{
 			{Target: model.TCPTarget{Name: "fast-a"}, Attempts: 1, Successful: 1, P95: time.Millisecond},
@@ -87,8 +87,22 @@ func TestRunCLITCPCompactDetailLimit(t *testing.T) {
 	if exitCode := runCLI(context.Background(), []string{"-tm", "tcp", "-tcp-details", "1"}, &output, runner); exitCode != 0 {
 		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
 	}
-	if !strings.Contains(output.String(), "异常/最慢目标 1/3") || !strings.Contains(output.String(), "slow-c") || strings.Contains(output.String(), "fast-a") || strings.Contains(output.String(), "middle-b") {
-		t.Fatalf("compact detail limit was not applied: %q", output.String())
+	for _, name := range []string{"fast-a", "middle-b", "slow-c"} {
+		if !strings.Contains(output.String(), name) {
+			t.Fatalf("compatibility option hid platform %q: %q", name, output.String())
+		}
+	}
+}
+
+func TestRunCLIEnglishPingUsesInternationalAutoScope(t *testing.T) {
+	var got pt.PingOptions
+	runner := commandRunner{pingWithOptions: func(options pt.PingOptions) string { got = options; return "ping-result" }}
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-l", "en", "-ping-sort", "name"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if got.Language != "en" || got.Scope != model.PingScopeAuto || got.Sort != model.PingSortName {
+		t.Fatalf("unexpected ping options: %+v", got)
 	}
 }
 

@@ -219,6 +219,43 @@ func processWithLimitedConcurrency(servers []*model.Server, concurrency int) []*
 }
 
 func PingTest() string {
+	return PingTestWithOptions(PingOptions{})
+}
+
+// PingTestWithSort runs the domestic latency test and orders its fixed-width
+// output by measured delay or stable platform name.
+func PingTestWithSort(order model.PingSort) string {
+	return PingTestWithOptions(PingOptions{Sort: order, Scope: model.PingScopeChina})
+}
+
+// PingOptions controls the target family and stable output ordering.
+type PingOptions struct {
+	Language string
+	Scope    model.PingScope
+	Sort     model.PingSort
+}
+
+// PingTestWithOptions keeps Chinese mode on the existing domestic registries
+// and uses a small representative international set for English auto mode.
+func PingTestWithOptions(options PingOptions) string {
+	if options.Sort != model.PingSortName {
+		options.Sort = model.PingSortLatency
+	}
+	scope := options.Scope
+	if scope == "" || scope == model.PingScopeAuto {
+		if strings.EqualFold(strings.TrimSpace(options.Language), "en") {
+			scope = model.PingScopeInternational
+		} else {
+			scope = model.PingScopeChina
+		}
+	}
+	if scope == model.PingScopeInternational {
+		return pingInternationalTest(options.Sort)
+	}
+	return pingDomesticTest(options.Sort)
+}
+
+func pingDomesticTest(order model.PingSort) string {
 	// 添加 defer recover 防止 panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -229,7 +266,6 @@ func PingTest() string {
 	if model.EnableLoger {
 		InitLogger()
 	}
-	var result string
 	servers1 := getServers("cu")
 	servers2 := getServers("ct")
 	servers3 := getServers("cmcc")
@@ -282,8 +318,25 @@ func PingTest() string {
 		filteredServers = append(filteredServers, server)
 	}
 	allServers = filteredServers
-	// 首先按运营商分组，然后按延迟排序
-	sort.Slice(allServers, func(i, j int) bool {
+	return formatPingServers(allServers, order)
+}
+
+func pingInternationalTest(order model.PingSort) string {
+	targets := make([]*model.Server, 0, len(InternationalICMPTargets()))
+	for _, target := range InternationalICMPTargets() {
+		targets = append(targets, &model.Server{Name: target.Name, IP: target.Host})
+	}
+	return formatPingServers(processWithLimitedConcurrency(targets, model.MaxConcurrency), order)
+}
+
+func formatPingServers(allServers []*model.Server, order model.PingSort) string {
+	if order != model.PingSortName {
+		order = model.PingSortLatency
+	}
+	sort.SliceStable(allServers, func(i, j int) bool {
+		if order == model.PingSortName {
+			return strings.ToLower(allServers[i].Name) < strings.ToLower(allServers[j].Name)
+		}
 		// 获取运营商名称前缀（前两个字符）
 		isp1 := "未知"
 		if len(allServers[i].Name) >= 2 {
@@ -297,9 +350,12 @@ func PingTest() string {
 		if isp1 != isp2 {
 			return isp1 < isp2
 		}
-		// 相同运营商则按延迟排序
-		return allServers[i].Avg < allServers[j].Avg
+		if allServers[i].Avg != allServers[j].Avg {
+			return allServers[i].Avg < allServers[j].Avg
+		}
+		return strings.ToLower(allServers[i].Name) < strings.ToLower(allServers[j].Name)
 	})
+	var result string
 	// 优化输出格式，按运营商分组显示
 	var currentISP string
 	var count int

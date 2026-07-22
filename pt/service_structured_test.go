@@ -3,6 +3,7 @@ package pt
 import (
 	"context"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -43,6 +44,19 @@ func TestRunWebsiteTCPProbesUsesWebsiteRegistry(t *testing.T) {
 	for _, result := range results {
 		if result.Target.Source != "popular-websites" || result.Successful != 1 {
 			t.Fatalf("unexpected website result: %#v", result)
+		}
+	}
+}
+
+func TestInternationalICMPTargetsExcludeChinaAndRemainRepresentative(t *testing.T) {
+	targets := InternationalICMPTargets()
+	if len(targets) < 6 {
+		t.Fatalf("international target count = %d, want representative set", len(targets))
+	}
+	for _, target := range targets {
+		text := strings.ToLower(target.ID + " " + target.Name + " " + target.Host)
+		if strings.Contains(text, "china") || strings.Contains(text, "中国") {
+			t.Fatalf("international targets contain China entry: %+v", target)
 		}
 	}
 }

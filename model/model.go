@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-const PingTestVersion = "v0.0.18"
+const PingTestVersion = "v0.0.19"
 
 var EnableLoger = false
 var MaxConcurrency = 30 // 并发量
@@ -30,6 +30,23 @@ type Server struct {
 	Tested     bool   // 标记是否已经测试过
 	SourceType string // 记录来源类型
 }
+
+// PingSort controls the legacy domestic latency table ordering.
+type PingSort string
+
+const (
+	PingSortLatency PingSort = "latency"
+	PingSortName    PingSort = "name"
+)
+
+// PingScope selects the target family used by the legacy latency table.
+type PingScope string
+
+const (
+	PingScopeAuto          PingScope = "auto"
+	PingScopeChina         PingScope = "china"
+	PingScopeInternational PingScope = "international"
+)
 
 type IcmpTarget struct {
 	Province  string `json:"province"`
