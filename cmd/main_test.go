@@ -49,7 +49,7 @@ func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
 	if got := strings.Join(*calls, ","); got != "tcp" {
 		t.Fatalf("tcp dispatch = %q, want tcp", got)
 	}
-	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败 DNS:0", "完整目标 1/1", "平台", "成功/尝试", "丢包", "Min/Avg/P50/P95/Max", "fixture", "1/1"} {
+	for _, value := range []string{"汇总 目标:1", "握手:1/1", "成功率:100.0%", "失败:0", "平台", "成功/尝试", "丢包", "Min/Avg/P50/P95/Max", "fixture", "1/1"} {
 		if !strings.Contains(output.String(), value) {
 			t.Errorf("TCP output %q does not contain %q", output.String(), value)
 		}
@@ -57,6 +57,11 @@ func TestRunCLITCPModeUsesStructuredTCPRunner(t *testing.T) {
 	for _, forbidden := range []string{"success=", "loss=", "errors="} {
 		if strings.Contains(output.String(), forbidden) {
 			t.Errorf("TCP output retained debug field %q: %q", forbidden, output.String())
+		}
+	}
+	for _, forbidden := range []string{"DNS:0", "拒绝:0", "超时:0", "其他:0", "完整目标"} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Errorf("TCP output retained obsolete field %q: %q", forbidden, output.String())
 		}
 	}
 }
@@ -70,8 +75,21 @@ func TestRunCLITCPFullFormat(t *testing.T) {
 	if got := strings.Join(*calls, ","); got != "tcp" {
 		t.Fatalf("tcp dispatch = %q, want tcp", got)
 	}
-	if !strings.Contains(output.String(), "完整目标 1/1") || strings.Contains(output.String(), "类别汇总") {
+	if !strings.Contains(output.String(), "平台") || strings.Contains(output.String(), "完整目标") || strings.Contains(output.String(), "类别汇总") {
 		t.Fatalf("full TCP format was not selected: %q", output.String())
+	}
+}
+
+func TestRunCLITCPEnglishUsesEnglishTableLabels(t *testing.T) {
+	runner, _ := offlineRunner()
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-tm", "tcp", "-l", "en"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	for _, value := range []string{"Summary Targets:1", "Handshakes:1/1", "Success rate:100.0%", "Failed:0", "Platform", "Success/Attempts", "Loss"} {
+		if !strings.Contains(output.String(), value) {
+			t.Errorf("English TCP output %q does not contain %q", output.String(), value)
+		}
 	}
 }
 

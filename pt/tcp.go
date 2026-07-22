@@ -223,137 +223,85 @@ type TCPFormatOptions struct {
 	Format     TCPTextFormat
 	MaxDetails int
 	Sort       model.TCPSort
+	Language   string
 }
 
 func DefaultTCPFormatOptions() TCPFormatOptions {
 	return TCPFormatOptions{Format: TCPTextFormatFull, MaxDetails: DefaultTCPCompactDetails, Sort: model.TCPSortName}
 }
 
-// FormatTCPResults defaults to compact text for CLI and legacy embedding.
-// API consumers should keep using TCPResult for complete per-target data.
+// FormatTCPResults renders every target as one stable table row. API consumers
+// should keep using TCPResult when they need individual samples.
 func FormatTCPResults(results []TCPResult) string {
 	return FormatTCPResultsWithOptions(results, DefaultTCPFormatOptions())
 }
 
 func FormatTCPResultsWithOptions(results []TCPResult, options TCPFormatOptions) string {
+	labels := tcpLabelsForLanguage(options.Language)
 	if len(results) == 0 {
-		return "暂无可用的 TCP 测试目标"
-	}
-	if options.Format != TCPTextFormatFull {
-		options.Format = TCPTextFormatCompact
-	}
-	if options.MaxDetails <= 0 {
-		options.MaxDetails = DefaultTCPCompactDetails
+		return labels.noTargets
 	}
 	var output strings.Builder
 	summary := summarizeTCPResults(results)
-	writeTCPOverallSummary(&output, summary)
-	groups := groupTCPResults(results)
+	writeTCPOverallSummary(&output, summary, labels)
 	if options.Sort != model.TCPSortLatency {
 		options.Sort = model.TCPSortName
 	}
-	// Text output always keeps every platform. The structured API remains the
-	// source for machine-readable samples, while both legacy text modes use the
-	// same compact two-column presentation.
-	writeTCPFullDetails(&output, groups, len(results), options.Sort)
+	writeTCPResultTable(&output, results, options.Sort, labels)
 	return trimTCPOutput(output.String())
 }
 
-type tcpResultGroup struct {
-	Name    string
-	Results []TCPResult
-	Summary tcpResultsSummary
+type tcpTextLabels struct {
+	noTargets       string
+	summary         string
+	targets         string
+	handshakes      string
+	successRate     string
+	failed          string
+	dns             string
+	refused         string
+	timeout         string
+	other           string
+	platform        string
+	successAttempts string
+	loss            string
 }
 
-func writeTCPOverallSummary(output *strings.Builder, summary tcpResultsSummary) {
-	fmt.Fprintf(output, "汇总 目标:%d  握手:%d/%d  成功率:%.1f%%  失败:%d\n",
-		summary.Targets, summary.Successful, summary.Attempts, summary.SuccessRate, summary.Failed)
-	fmt.Fprintf(output, "延迟 Min/Avg/P50/P95/Max: %s\n", formatTCPDurationSet(summary.Min, summary.Mean, summary.P50, summary.P95, summary.Max))
-	fmt.Fprintf(output, "失败 DNS:%d  拒绝:%d  超时:%d  其他:%d\n", summary.DNS, summary.Refused, summary.Timeout, summary.Other)
-}
-
-func groupTCPResults(results []TCPResult) []tcpResultGroup {
-	groups := make([]tcpResultGroup, 0)
-	indexes := make(map[string]int)
-	for _, result := range results {
-		category := strings.TrimSpace(result.Target.Category)
-		if category == "" {
-			category = "未分类"
+func tcpLabelsForLanguage(language string) tcpTextLabels {
+	if strings.EqualFold(strings.TrimSpace(language), "en") {
+		return tcpTextLabels{
+			noTargets: "No TCP targets available", summary: "Summary", targets: "Targets",
+			handshakes: "Handshakes", successRate: "Success rate", failed: "Failed",
+			dns: "DNS", refused: "Refused", timeout: "Timeout", other: "Other",
+			platform: "Platform", successAttempts: "Success/Attempts", loss: "Loss",
 		}
-		index, exists := indexes[category]
-		if !exists {
-			index = len(groups)
-			indexes[category] = index
-			groups = append(groups, tcpResultGroup{Name: category})
-		}
-		groups[index].Results = append(groups[index].Results, result)
 	}
-	for index := range groups {
-		groups[index].Summary = summarizeTCPResults(groups[index].Results)
-	}
-	return groups
-}
-
-func writeTCPCompactDetails(output *strings.Builder, groups []tcpResultGroup, results []TCPResult, maxDetails int, order model.TCPSort) {
-	const (
-		categoryWidth  = 16
-		targetsWidth   = 6
-		handshakeWidth = 10
-		rateWidth      = 8
-		latencyWidth   = 19
-		errorsWidth    = 11
-	)
-	output.WriteString("类别汇总\n")
-	fmt.Fprintf(output, "%s  %s  %s  %s  %s  %s\n",
-		padTCPCell("类别", categoryWidth), padTCPCell("目标", targetsWidth), padTCPCell("握手", handshakeWidth),
-		padTCPCell("成功率", rateWidth), padTCPCell("Avg/P95/Max", latencyWidth), padTCPCell("D/R/T/O", errorsWidth))
-	for _, group := range groups {
-		summary := group.Summary
-		fmt.Fprintf(output, "%s  %s  %s  %s  %s  %s\n",
-			padTCPCell(tcpCategoryLabel(group.Name), categoryWidth), padTCPCell(strconv.Itoa(summary.Targets), targetsWidth),
-			padTCPCell(fmt.Sprintf("%d/%d", summary.Successful, summary.Attempts), handshakeWidth),
-			padTCPCell(fmt.Sprintf("%.1f%%", summary.SuccessRate), rateWidth),
-			padTCPCell(formatTCPDurationSet(summary.Mean, summary.P95, summary.Max), latencyWidth),
-			padTCPCell(fmt.Sprintf("%d/%d/%d/%d", summary.DNS, summary.Refused, summary.Timeout, summary.Other), errorsWidth))
-	}
-
-	selected := sortTCPResults(results, order)
-	if len(selected) > maxDetails {
-		selected = selected[:maxDetails]
-	}
-	fmt.Fprintf(output, "异常/最慢目标 %d/%d\n", len(selected), len(results))
-	const (
-		nameWidth           = 16
-		detailCategoryWidth = 16
-		successWidth        = 7
-		lossWidth           = 7
-		p95Width            = 10
-		detailErrorsWidth   = 11
-	)
-	fmt.Fprintf(output, "%s  %s  %s  %s  %s  %s\n",
-		padTCPCell("目标", nameWidth), padTCPCell("类别", detailCategoryWidth), padTCPCell("成功", successWidth),
-		padTCPCell("丢包", lossWidth), padTCPCell("P95", p95Width), padTCPCell("D/R/T/O", detailErrorsWidth))
-	for _, result := range selected {
-		classes := classifyTCPResult(result)
-		category := strings.TrimSpace(result.Target.Category)
-		if category == "" {
-			category = "未分类"
-		}
-		fmt.Fprintf(output, "%s  %s  %s  %s  %s  %s\n",
-			padTCPCell(tcpResultName(result), nameWidth), padTCPCell(tcpCategoryLabel(category), detailCategoryWidth),
-			padTCPCell(fmt.Sprintf("%d/%d", result.Successful, result.Attempts), successWidth),
-			padTCPCell(fmt.Sprintf("%.1f%%", tcpLossPercent(result)), lossWidth),
-			padTCPCell(formatTCPDurationSet(result.P95), p95Width),
-			padTCPCell(fmt.Sprintf("%d/%d/%d/%d", classes.DNS, classes.Refused, classes.Timeout, classes.Other), detailErrorsWidth))
+	return tcpTextLabels{
+		noTargets: "暂无可用的 TCP 测试目标", summary: "汇总", targets: "目标",
+		handshakes: "握手", successRate: "成功率", failed: "失败",
+		dns: "DNS", refused: "拒绝", timeout: "超时", other: "其他",
+		platform: "平台", successAttempts: "成功/尝试", loss: "丢包",
 	}
 }
 
-func selectTCPDetailResults(results []TCPResult, limit int) []TCPResult {
-	selected := sortTCPResults(results, model.TCPSortLatency)
-	if len(selected) > limit {
-		selected = selected[:limit]
+func writeTCPOverallSummary(output *strings.Builder, summary tcpResultsSummary, labels tcpTextLabels) {
+	fmt.Fprintf(output, "%s %s:%d  %s:%d/%d  %s:%.1f%%  %s:%d",
+		labels.summary, labels.targets, summary.Targets, labels.handshakes, summary.Successful, summary.Attempts,
+		labels.successRate, summary.SuccessRate, labels.failed, summary.Failed)
+	for _, failure := range []struct {
+		label string
+		count int
+	}{
+		{labels.dns, summary.DNS},
+		{labels.refused, summary.Refused},
+		{labels.timeout, summary.Timeout},
+		{labels.other, summary.Other},
+	} {
+		if failure.count > 0 {
+			fmt.Fprintf(output, "  %s:%d", failure.label, failure.count)
+		}
 	}
-	return selected
+	output.WriteByte('\n')
 }
 
 func sortTCPResults(results []TCPResult, order model.TCPSort) []TCPResult {
@@ -395,50 +343,40 @@ func tcpErrorTotal(summary tcpErrorSummary) int {
 	return summary.DNS + summary.Refused + summary.Timeout + summary.Other
 }
 
-func tcpCategoryLabel(category string) string {
-	labels := map[string]string{
-		"search": "搜索", "social": "社交", "video": "视频", "ai": "AI",
-		"dev": "开发", "cloud": "云服务", "shopping": "购物", "tool": "工具",
-		"gaming": "游戏", "tech": "科技", "news": "新闻", "global": "全球",
+func writeTCPResultTable(output *strings.Builder, results []TCPResult, order model.TCPSort, labels tcpTextLabels) {
+	type row struct {
+		platform, success, loss, metrics string
 	}
-	if label, ok := labels[strings.ToLower(strings.TrimSpace(category))]; ok {
-		return label
+	rows := make([]row, 0, len(results))
+	widths := []int{
+		runewidth.StringWidth(labels.platform),
+		runewidth.StringWidth(labels.successAttempts),
+		runewidth.StringWidth(labels.loss),
+		runewidth.StringWidth("Min/Avg/P50/P95/Max; D/R/T/O"),
 	}
-	return category
-}
-
-func writeTCPFullDetails(output *strings.Builder, groups []tcpResultGroup, total int, order model.TCPSort) {
-	const cellWidth = 38
-	fmt.Fprintf(output, "完整目标 %d/%d\n", total, total)
-	fmt.Fprintf(output, "%s  %s\n", padTCPCell("平台 | 成功/尝试 | 丢包", cellWidth), padTCPCell("平台 | 成功/尝试 | 丢包", cellWidth))
-	fmt.Fprintf(output, "%s  %s\n", padTCPCell("Min/Avg/P50/P95/Max; D/R/T/O", cellWidth), padTCPCell("Min/Avg/P50/P95/Max; D/R/T/O", cellWidth))
-	results := make([]TCPResult, 0, total)
-	for _, group := range groups {
-		results = append(results, group.Results...)
-	}
-	sorted := sortTCPResults(results, order)
-	for index := 0; index < len(sorted); index += 2 {
-		leftLines := tcpDetailLines(sorted[index])
-		rightLines := []string{"", ""}
-		if index+1 < len(sorted) {
-			rightLines = tcpDetailLines(sorted[index+1])
+	for _, result := range sortTCPResults(results, order) {
+		classes := classifyTCPResult(result)
+		current := row{
+			platform: tcpResultName(result),
+			success:  fmt.Sprintf("%d/%d", result.Successful, result.Attempts),
+			loss:     fmt.Sprintf("%.1f%%", tcpLossPercent(result)),
+			metrics: fmt.Sprintf("%s; %d/%d/%d/%d",
+				formatTCPDurationSet(result.Min, result.Mean, result.P50, result.P95, result.Max),
+				classes.DNS, classes.Refused, classes.Timeout, classes.Other),
 		}
-		for line := range leftLines {
-			fmt.Fprintf(output, "%s  %s\n", padTCPCell(leftLines[line], cellWidth), padTCPCell(rightLines[line], cellWidth))
+		values := []string{current.platform, current.success, current.loss, current.metrics}
+		for index, value := range values {
+			widths[index] = max(widths[index], runewidth.StringWidth(value))
 		}
+		rows = append(rows, current)
 	}
-}
-
-func tcpDetailLines(result TCPResult) []string {
-	classes := classifyTCPResult(result)
-	category := strings.TrimSpace(result.Target.Category)
-	name := tcpResultName(result)
-	if category != "" {
-		name += "/" + tcpCategoryLabel(category)
-	}
-	return []string{
-		fmt.Sprintf("%s | %d/%d | %.1f%%", name, result.Successful, result.Attempts, tcpLossPercent(result)),
-		fmt.Sprintf("%s; %d/%d/%d/%d", formatTCPDurationSet(result.Min, result.Mean, result.P50, result.P95, result.Max), classes.DNS, classes.Refused, classes.Timeout, classes.Other),
+	fmt.Fprintf(output, "%s  %s  %s  %s\n",
+		padTCPCell(labels.platform, widths[0]), padTCPCell(labels.successAttempts, widths[1]),
+		padTCPCell(labels.loss, widths[2]), padTCPCell("Min/Avg/P50/P95/Max; D/R/T/O", widths[3]))
+	for _, current := range rows {
+		fmt.Fprintf(output, "%s  %s  %s  %s\n",
+			padTCPCell(current.platform, widths[0]), padTCPCell(current.success, widths[1]),
+			padTCPCell(current.loss, widths[2]), padTCPCell(current.metrics, widths[3]))
 	}
 }
 
@@ -611,10 +549,8 @@ func formatTCPDurationSet(values ...time.Duration) string {
 	suffix := "us"
 	precision := 1
 	if max >= 100*time.Millisecond {
-		// Integer milliseconds keep slow results precise without forcing the
-		// two-column detail row to truncate its D/R/T/O counters. Formatting
-		// the whole set in seconds also turns ordinary 10-50 ms samples into
-		// misleading 0.0 values whenever one attempt crosses one second.
+		// Integer milliseconds keep slow results compact without turning ordinary
+		// 10-50 ms samples into 0.0 values when one attempt crosses one second.
 		unit, suffix, precision = time.Millisecond, "ms", 0
 	} else if max >= time.Millisecond {
 		unit, suffix = time.Millisecond, "ms"
