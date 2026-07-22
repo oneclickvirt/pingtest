@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/oneclickvirt/pingtest/model"
 )
 
@@ -216,8 +218,8 @@ func TestFormatTCPResultsUsesOneCompleteRowPerPlatform(t *testing.T) {
 	for _, want := range []string{
 		"汇总 目标:3", "握手:4/9", "成功率:44.4%", "失败:5",
 		"DNS:1", "拒绝:1", "超时:1", "其他:2",
-		"平台", "成功/尝试", "丢包", "Min/Avg/P50/P95/Max",
-		"alpha", "beta", "gamma", "0/0/1/0", "1/1/0/0", "0/0/0/2",
+		"平台", "成功/尝试", "丢包", "Min", "Avg", "P50", "P95", "Max", "D", "R", "T", "O",
+		"alpha", "beta", "gamma",
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("formatted output missing %q: %q", want, output)
@@ -298,12 +300,12 @@ func TestTCPDetailKeepsSlowLatencyAndErrorCountersComplete(t *testing.T) {
 	if strings.Contains(output, "...") {
 		t.Fatalf("slow TCP detail was truncated:\n%s", output)
 	}
-	for _, want := range []string{"237/251/246/268/271ms", "0/0/0/0"} {
+	for _, want := range []string{"237", "251", "246", "268", "271"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("slow TCP detail missing %q:\n%s", want, output)
 		}
 	}
-	if lines := strings.Split(output, "\n"); len(lines) != 3 || !strings.Contains(lines[2], "ProtonMail") || !strings.Contains(lines[2], "237/251/246/268/271ms") {
+	if lines := strings.Split(output, "\n"); len(lines) != 3 || !strings.Contains(lines[2], "ProtonMail") || !strings.Contains(lines[2], "237") || strings.Contains(lines[2], ";") || strings.Contains(lines[2], "/251") {
 		t.Fatalf("platform did not stay on one complete row:\n%s", output)
 	}
 }
@@ -357,15 +359,64 @@ func TestTCPResultsTranslateEnglishAndOmitZeroFailureClasses(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("English output has %d lines, want 3:\n%s", len(lines), output)
 	}
-	for header, value := range map[string]string{
-		"Success/Attempts":             "2/2",
-		"Loss":                         "0.0%",
-		"Min/Avg/P50/P95/Max; D/R/T/O": "1.0/2.0/2.0/3.0/3.0ms; 0/0/0/0",
-	} {
-		if strings.Index(lines[1], header) != strings.Index(lines[2], value) {
-			t.Fatalf("column %q is not aligned:\n%s", header, output)
+	headerFields := strings.Fields(lines[1])
+	valueFields := strings.Fields(lines[2])
+	if len(headerFields) != 12 || len(valueFields) < 12 {
+		t.Fatalf("TCP columns are incomplete: headers=%v values=%v\n%s", headerFields, valueFields, output)
+	}
+	for _, want := range []string{"Min", "Avg", "P50", "P95", "Max", "D", "R", "T", "O"} {
+		if !slices.Contains(headerFields, want) {
+			t.Fatalf("TCP header missing %q: %v", want, headerFields)
 		}
 	}
+}
+
+func TestTCPMetricColumnsUseSpacesAndStayAligned(t *testing.T) {
+	results := []TCPResult{
+		{Target: model.TCPTarget{Name: "Adobe"}, Attempts: 3, Successful: 3, Min: 5 * time.Millisecond, Mean: 6900 * time.Microsecond, P50: 6300 * time.Microsecond, P95: 9100 * time.Microsecond, Max: 9400 * time.Microsecond},
+		{Target: model.TCPTarget{Name: "AliExpress"}, Attempts: 3, Successful: 3, Min: 17400 * time.Microsecond, Mean: 35600 * time.Microsecond, P50: 32900 * time.Microsecond, P95: 54100 * time.Microsecond, Max: 56400 * time.Microsecond},
+	}
+	output := FormatTCPResults(results)
+	lines := strings.Split(output, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("unexpected TCP output:\n%s", output)
+	}
+	for _, forbidden := range []string{"Min/Avg", "D/R/T/O", ";"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("TCP table retained packed separator %q:\n%s", forbidden, output)
+		}
+	}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) != 12 {
+			t.Fatalf("TCP row has %d columns, want 12: %q", len(fields), line)
+		}
+	}
+	for column := 1; column < 12; column++ {
+		rightEdge := tcpTestColumnRightEdge(lines[1], column)
+		for _, line := range lines[2:] {
+			if got := tcpTestColumnRightEdge(line, column); got != rightEdge {
+				t.Fatalf("column %d right edge = %d, want %d:\n%s", column, got, rightEdge, output)
+			}
+		}
+	}
+}
+
+func tcpTestColumnRightEdge(line string, column int) int {
+	fields := strings.Fields(line)
+	position := 0
+	for index, field := range fields {
+		start := strings.Index(line[position:], field)
+		if start < 0 {
+			return -1
+		}
+		position += start
+		if index == column {
+			return runewidth.StringWidth(line[:position+len(field)])
+		}
+		position += len(field)
+	}
+	return -1
 }
 
 func TestFormatTCPResultsKeepsAggregateJSONFieldsUnchanged(t *testing.T) {

@@ -345,39 +345,59 @@ func tcpErrorTotal(summary tcpErrorSummary) int {
 
 func writeTCPResultTable(output *strings.Builder, results []TCPResult, order model.TCPSort, labels tcpTextLabels) {
 	type row struct {
-		platform, success, loss, metrics string
+		cells []string
+	}
+	headings := []string{
+		labels.platform, labels.successAttempts, labels.loss,
+		"Min", "Avg", "P50", "P95", "Max", "D", "R", "T", "O",
 	}
 	rows := make([]row, 0, len(results))
-	widths := []int{
-		runewidth.StringWidth(labels.platform),
-		runewidth.StringWidth(labels.successAttempts),
-		runewidth.StringWidth(labels.loss),
-		runewidth.StringWidth("Min/Avg/P50/P95/Max; D/R/T/O"),
+	widths := make([]int, len(headings))
+	for index, heading := range headings {
+		widths[index] = runewidth.StringWidth(heading)
+		if index >= 3 {
+			widths[index] = max(widths[index], 3)
+		}
 	}
 	for _, result := range sortTCPResults(results, order) {
 		classes := classifyTCPResult(result)
-		current := row{
-			platform: tcpResultName(result),
-			success:  fmt.Sprintf("%d/%d", result.Successful, result.Attempts),
-			loss:     fmt.Sprintf("%.1f%%", tcpLossPercent(result)),
-			metrics: fmt.Sprintf("%s; %d/%d/%d/%d",
-				formatTCPDurationSet(result.Min, result.Mean, result.P50, result.P95, result.Max),
-				classes.DNS, classes.Refused, classes.Timeout, classes.Other),
-		}
-		values := []string{current.platform, current.success, current.loss, current.metrics}
-		for index, value := range values {
+		current := row{cells: []string{
+			tcpResultName(result),
+			fmt.Sprintf("%d/%d", result.Successful, result.Attempts),
+			fmt.Sprintf("%.1f%%", tcpLossPercent(result)),
+			formatTCPMilliseconds(result.Min),
+			formatTCPMilliseconds(result.Mean),
+			formatTCPMilliseconds(result.P50),
+			formatTCPMilliseconds(result.P95),
+			formatTCPMilliseconds(result.Max),
+			strconv.Itoa(classes.DNS),
+			strconv.Itoa(classes.Refused),
+			strconv.Itoa(classes.Timeout),
+			strconv.Itoa(classes.Other),
+		}}
+		for index, value := range current.cells {
 			widths[index] = max(widths[index], runewidth.StringWidth(value))
 		}
 		rows = append(rows, current)
 	}
-	fmt.Fprintf(output, "%s  %s  %s  %s\n",
-		padTCPCell(labels.platform, widths[0]), padTCPCell(labels.successAttempts, widths[1]),
-		padTCPCell(labels.loss, widths[2]), padTCPCell("Min/Avg/P50/P95/Max; D/R/T/O", widths[3]))
+	writeTCPTableRow(output, headings, widths)
 	for _, current := range rows {
-		fmt.Fprintf(output, "%s  %s  %s  %s\n",
-			padTCPCell(current.platform, widths[0]), padTCPCell(current.success, widths[1]),
-			padTCPCell(current.loss, widths[2]), padTCPCell(current.metrics, widths[3]))
+		writeTCPTableRow(output, current.cells, widths)
 	}
+}
+
+func writeTCPTableRow(output *strings.Builder, cells []string, widths []int) {
+	for index, cell := range cells {
+		if index > 0 {
+			output.WriteString("  ")
+		}
+		if index == 0 {
+			output.WriteString(padTCPCell(cell, widths[index]))
+		} else {
+			output.WriteString(padTCPCellLeft(cell, widths[index]))
+		}
+	}
+	output.WriteByte('\n')
 }
 
 func trimTCPOutput(value string) string {
@@ -525,6 +545,15 @@ func padTCPCell(value string, width int) string {
 	return value + strings.Repeat(" ", padding)
 }
 
+func padTCPCellLeft(value string, width int) string {
+	value = truncateTCPCell(strings.Join(strings.Fields(value), " "), width)
+	padding := width - runewidth.StringWidth(value)
+	if padding < 0 {
+		padding = 0
+	}
+	return strings.Repeat(" ", padding) + value
+}
+
 func truncateTCPCell(value string, width int) string {
 	if runewidth.StringWidth(value) <= width {
 		return value
@@ -535,39 +564,15 @@ func truncateTCPCell(value string, width int) string {
 	return runewidth.Truncate(value, width-3, "") + "..."
 }
 
-func formatTCPDurationSet(values ...time.Duration) string {
-	max := time.Duration(0)
-	for _, value := range values {
-		if value > max {
-			max = value
-		}
-	}
-	if max <= 0 {
+func formatTCPMilliseconds(value time.Duration) string {
+	if value <= 0 {
 		return "-"
 	}
-	unit := time.Microsecond
-	suffix := "us"
-	precision := 1
-	if max >= 100*time.Millisecond {
-		// Integer milliseconds keep slow results compact without turning ordinary
-		// 10-50 ms samples into 0.0 values when one attempt crosses one second.
-		unit, suffix, precision = time.Millisecond, "ms", 0
-	} else if max >= time.Millisecond {
-		unit, suffix = time.Millisecond, "ms"
+	milliseconds := float64(value) / float64(time.Millisecond)
+	if milliseconds >= 100 {
+		return strconv.FormatFloat(math.Round(milliseconds), 'f', 0, 64)
 	}
-	parts := make([]string, len(values))
-	for index, value := range values {
-		if value <= 0 {
-			parts[index] = "-"
-			continue
-		}
-		scaled := float64(value) / float64(unit)
-		if precision == 0 {
-			scaled = math.Round(scaled)
-		}
-		parts[index] = strconv.FormatFloat(scaled, 'f', precision, 64)
-	}
-	return strings.Join(parts, "/") + suffix
+	return strconv.FormatFloat(milliseconds, 'f', 1, 64)
 }
 
 func (result *TCPResult) recordSuccess(attempt int, duration time.Duration) {
