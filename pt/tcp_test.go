@@ -297,6 +297,30 @@ func TestCompactTCPResultsShowsAllPlatformsAndSupportsLatencyOrder(t *testing.T)
 	}
 }
 
+func TestTCPDetailKeepsSlowLatencyAndErrorCountersComplete(t *testing.T) {
+	result := TCPResult{
+		Target:   model.TCPTarget{Name: "ProtonMail", Category: "global"},
+		Attempts: 3, Successful: 3,
+		Min: 237100 * time.Microsecond, Mean: 251100 * time.Microsecond,
+		P50: 245800 * time.Microsecond, P95: 268000 * time.Microsecond,
+		Max: 270500 * time.Microsecond,
+	}
+	output := FormatTCPResults([]TCPResult{result})
+	if strings.Contains(output, "...") {
+		t.Fatalf("slow TCP detail was truncated:\n%s", output)
+	}
+	for _, want := range []string{"237/251/246/268/271ms", "0/0/0/0"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("slow TCP detail missing %q:\n%s", want, output)
+		}
+	}
+	for _, line := range strings.Split(output, "\n") {
+		if width := runewidth.StringWidth(line); width > 80 {
+			t.Fatalf("slow TCP detail width %d exceeds 80: %q", width, line)
+		}
+	}
+}
+
 func TestDefaultRegistryOutputIncludesEveryPlatformInTwoColumns(t *testing.T) {
 	targets := model.AllTCPTargets()
 	results := make([]TCPResult, 0, len(targets))

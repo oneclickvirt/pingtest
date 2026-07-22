@@ -609,8 +609,13 @@ func formatTCPDurationSet(values ...time.Duration) string {
 	}
 	unit := time.Microsecond
 	suffix := "us"
-	if max >= time.Second {
-		unit, suffix = time.Second, "s"
+	precision := 1
+	if max >= 100*time.Millisecond {
+		// Integer milliseconds keep slow results precise without forcing the
+		// two-column detail row to truncate its D/R/T/O counters. Formatting
+		// the whole set in seconds also turns ordinary 10-50 ms samples into
+		// misleading 0.0 values whenever one attempt crosses one second.
+		unit, suffix, precision = time.Millisecond, "ms", 0
 	} else if max >= time.Millisecond {
 		unit, suffix = time.Millisecond, "ms"
 	}
@@ -620,7 +625,11 @@ func formatTCPDurationSet(values ...time.Duration) string {
 			parts[index] = "-"
 			continue
 		}
-		parts[index] = fmt.Sprintf("%.1f", float64(value)/float64(unit))
+		scaled := float64(value) / float64(unit)
+		if precision == 0 {
+			scaled = math.Round(scaled)
+		}
+		parts[index] = strconv.FormatFloat(scaled, 'f', precision, 64)
 	}
 	return strings.Join(parts, "/") + suffix
 }
