@@ -419,7 +419,7 @@ func writeTCPFullDetails(output *strings.Builder, groups []tcpResultGroup, total
 	sorted := sortTCPResults(results, order)
 	for index := 0; index < len(sorted); index += 2 {
 		leftLines := tcpDetailLines(sorted[index])
-		rightLines := []string{"", "", ""}
+		rightLines := []string{"", ""}
 		if index+1 < len(sorted) {
 			rightLines = tcpDetailLines(sorted[index+1])
 		}
@@ -432,13 +432,13 @@ func writeTCPFullDetails(output *strings.Builder, groups []tcpResultGroup, total
 func tcpDetailLines(result TCPResult) []string {
 	classes := classifyTCPResult(result)
 	category := strings.TrimSpace(result.Target.Category)
-	if category == "" {
-		category = "未分类"
+	name := tcpResultName(result)
+	if category != "" {
+		name += "/" + tcpCategoryLabel(category)
 	}
 	return []string{
-		fmt.Sprintf("%s | %d/%d | %.1f%%", tcpResultName(result), result.Successful, result.Attempts, tcpLossPercent(result)),
+		fmt.Sprintf("%s | %d/%d | %.1f%%", name, result.Successful, result.Attempts, tcpLossPercent(result)),
 		fmt.Sprintf("%s; %d/%d/%d/%d", formatTCPDurationSet(result.Min, result.Mean, result.P50, result.P95, result.Max), classes.DNS, classes.Refused, classes.Timeout, classes.Other),
-		fmt.Sprintf("类别 %s", tcpCategoryLabel(category)),
 	}
 }
 
