@@ -42,13 +42,6 @@
     "source": "tcpbench"
   },
   {
-    "name": "Bing",
-    "host": "www.bing.com",
-    "port": 443,
-    "category": "global",
-    "source": "tcpbench"
-  },
-  {
     "name": "CNN",
     "host": "www.cnn.com",
     "port": 443,
@@ -107,6 +100,20 @@
   {
     "name": "DeepL",
     "host": "www.deepl.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "DeepSeek",
+    "host": "huggingface.co",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "DigitalOcean",
+    "host": "digitalocean.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -189,6 +196,27 @@
     "source": "tcpbench"
   },
   {
+    "name": "Grok",
+    "host": "chat.deepseek.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Hetzner",
+    "host": "hetzner.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "HuggingFace",
+    "host": "poe.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
     "name": "Instagram",
     "host": "www.instagram.com",
     "port": 443,
@@ -198,6 +226,13 @@
   {
     "name": "KhanAcademy",
     "host": "www.khanacademy.org",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Linode",
+    "host": "linode.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -233,6 +268,13 @@
   {
     "name": "Netflix",
     "host": "www.netflix.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Netlify",
+    "host": "netlify.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -280,6 +322,13 @@
     "source": "tcpbench"
   },
   {
+    "name": "Poe",
+    "host": "signal.org",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
     "name": "ProtonMail",
     "host": "mail.proton.me",
     "port": 443,
@@ -308,6 +357,20 @@
     "source": "tcpbench"
   },
   {
+    "name": "Signal",
+    "host": "line.me",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Skype",
+    "host": "skype.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
     "name": "Slack",
     "host": "slack.com",
     "port": 443,
@@ -331,6 +394,13 @@
   {
     "name": "Stripe",
     "host": "stripe.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Teams",
+    "host": "teams.microsoft.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -365,7 +435,7 @@
   },
   {
     "name": "Twitch",
-    "host": "www.twitch.tv",
+    "host": "grok.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -387,6 +457,13 @@
   {
     "name": "Vercel",
     "host": "vercel.com",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Vultr",
+    "host": "vultr.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
