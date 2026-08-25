@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	dnsresolver "github.com/oneclickvirt/basics/network/resolver"
 	. "github.com/oneclickvirt/defaultset"
 	"github.com/oneclickvirt/pingtest/model"
 	"github.com/oneclickvirt/pingtest/pt"
@@ -24,6 +25,8 @@ type commandRunner struct {
 	telegram        func() string
 	website         func() string
 	tcp             func(context.Context, pt.TCPProbeConfig, string) ([]pt.TCPResult, error)
+	configureDNS    func(context.Context, string) func()
+	recordHit       func()
 }
 
 func productionCommandRunner() commandRunner {
@@ -32,6 +35,18 @@ func productionCommandRunner() commandRunner {
 		pingWithOptions: pt.PingTestWithOptions,
 		telegram:        pt.TelegramDCTest,
 		website:         pt.WebsiteTest,
+		configureDNS: func(ctx context.Context, mode string) func() {
+			_ = dnsresolver.Configure(ctx, dnsresolver.Config{Mode: dnsresolver.ParseMode(mode)})
+			return dnsresolver.Shutdown
+		},
+		recordHit: func() {
+			go func() {
+				response, err := http.Get("https://hits.spiritlhl.net/pingtest.svg?action=hit&title=Hits&title_bg=%23555555&count_bg=%230eecf8&edge_flat=false")
+				if err == nil && response != nil && response.Body != nil {
+					_ = response.Body.Close()
+				}
+			}()
+		},
 		tcp: func(ctx context.Context, config pt.TCPProbeConfig, target string) ([]pt.TCPResult, error) {
 			if strings.TrimSpace(target) == "" {
 				results, _, err := pt.RunLoadedTCPRegistry(ctx, config)
@@ -47,9 +62,6 @@ func productionCommandRunner() commandRunner {
 }
 
 func main() {
-	go func() {
-		http.Get("https://hits.spiritlhl.net/pingtest.svg?action=hit&title=Hits&title_bg=%23555555&count_bg=%230eecf8&edge_flat=false")
-	}()
 	if exitCode := runCLI(context.Background(), os.Args[1:], os.Stdout, productionCommandRunner()); exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -57,7 +69,7 @@ func main() {
 
 func runCLI(ctx context.Context, args []string, output io.Writer, runner commandRunner) int {
 	var showVersion, help, jsonOutput bool
-	var testMode, target, tcpFormat, language, pingSort, pingScope, tcpSort string
+	var testMode, target, tcpFormat, language, pingSort, pingScope, tcpSort, dnsMode string
 	var attempts, concurrency, tcpDetails int
 	var timeout time.Duration
 	pingtestFlag := flag.NewFlagSet("pingtest", flag.ContinueOnError)
@@ -78,6 +90,7 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 	pingtestFlag.StringVar(&pingSort, "ping-sort", string(model.PingSortLatency), "Ping 排序: latency 或 name")
 	pingtestFlag.StringVar(&pingScope, "ping-scope", string(model.PingScopeAuto), "Ping 目标范围: auto、china 或 international")
 	pingtestFlag.StringVar(&tcpSort, "tcp-sort", string(model.TCPSortName), "TCP 平台排序: name 或 latency")
+	pingtestFlag.StringVar(&dnsMode, "dns-mode", "auto", "DNS 模式: auto、system、doh 或 dot")
 	pingtestFlag.StringVar(&testMode, "tm", "ori", "测试模式:\n"+
 		"  ori    - 国内三网延迟测试（默认）\n"+
 		"  tgdc   - Telegram 数据中心连通性测试\n"+
@@ -93,6 +106,7 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 		return 2
 	}
 	language = strings.ToLower(strings.TrimSpace(language))
+	dnsMode = strings.ToLower(strings.TrimSpace(dnsMode))
 	pingOrder := model.PingSort(strings.ToLower(strings.TrimSpace(pingSort)))
 	scope := model.PingScope(strings.ToLower(strings.TrimSpace(pingScope)))
 	tcpOrder := model.TCPSort(strings.ToLower(strings.TrimSpace(tcpSort)))
@@ -114,6 +128,10 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 	}
 	if tcpOrder != model.TCPSortName && tcpOrder != model.TCPSortLatency {
 		fmt.Fprintln(output, "错误: -tcp-sort 仅支持 name 或 latency")
+		return 2
+	}
+	if dnsMode != "auto" && dnsMode != "system" && dnsMode != "doh" && dnsMode != "dot" {
+		fmt.Fprintln(output, "错误: -dns-mode 仅支持 auto、system、doh 或 dot")
 		return 2
 	}
 	if !jsonOutput {
@@ -139,6 +157,14 @@ func runCLI(ctx context.Context, args []string, output io.Writer, runner command
 	if showVersion {
 		fmt.Fprintln(output, model.PingTestVersion)
 		return 0
+	}
+	if runner.configureDNS != nil {
+		if shutdown := runner.configureDNS(ctx, dnsMode); shutdown != nil {
+			defer shutdown()
+		}
+	}
+	if runner.recordHit != nil {
+		runner.recordHit()
 	}
 
 	// 根据测试模式执行不同的测试

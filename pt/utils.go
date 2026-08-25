@@ -148,8 +148,7 @@ func getData(endpoint string) string {
 func resolveIP(name string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	r := net.Resolver{}
-	ips, err := r.LookupIP(ctx, "ip", name)
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", name)
 	if err != nil {
 		return ""
 	}

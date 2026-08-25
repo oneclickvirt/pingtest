@@ -10,6 +10,7 @@
 - [x] **Telegram DC 检测** - 测试所有 Telegram 数据中心的连通性和延迟（参考 [OctoGramApp](https://github.com/OctoGramApp/octogramapp.github.io)）
 - [x] **流行网站测试** - 测试 Google、YouTube、Netflix、OpenAI 等主流网站的连通性 [UnlockTests](https://github.com/oneclickvirt/UnlockTests)
 - [x] **TCP 握手延迟测试** - 对主流平台执行真实 TCP 建连，显示成功率、丢包、延迟分位数和失败类型
+- [x] **无系统 DNS 回退** - 默认保留系统 DNS，只有确认本地 DNS 不可用时才使用进程内 DoH/DoT，不改写系统 resolver 文件
 - [x] 支持调用本机```ping```进行测试
 - [x] 支持使用官方```pro-bing```库进行测试
 - [x] 主体逻辑借鉴了[ecsspeed](https://github.com/spiritLHLS/ecsspeed)
@@ -28,6 +29,14 @@ curl https://raw.githubusercontent.com/oneclickvirt/pingtest/main/pt_install.sh 
 curl https://cdn.spiritlhl.net/https://raw.githubusercontent.com/oneclickvirt/pingtest/main/pt_install.sh -sSf | bash
 ```
 
+在线但本地 DNS 不可用时，使用支持 DoH 的 curl（例如 curl 7.62+）先拉取安装脚本：
+
+```bash
+curl --doh-url https://cloudflare-dns.com/dns-query --resolve cloudflare-dns.com:443:1.1.1.1,1.0.0.1 -sSfL https://raw.githubusercontent.com/oneclickvirt/pingtest/main/pt_install.sh | bash
+```
+
+安装脚本会保留 `wget` 优先顺序；下载失败且 curl 支持 DoH 时，会自动通过内置 DoH 重试。
+
 ### 基本使用
 
 ```bash
@@ -38,6 +47,8 @@ pt -tm web      # 测试流行网站连通性
 pt -tm tcp      # 测试主流平台 TCP 握手延迟
 pt -tm china    # 测试国内三网 + TG + 网站
 pt -tm global   # 测试 TG + 网站（不含三网）
+pt -dns-mode doh # 强制使用内置 DoH
+pt -dns-mode dot # 强制使用内置 DoT；默认 auto 仅在本地 DNS 确认不可用时回退
 pt -log         # 启用详细日志
 ```
 
@@ -173,6 +184,8 @@ pt -tm tcp -target example.com:443
                Ping 排序: latency 或 name
   -ping-scope string
                Ping 目标范围: auto、china 或 international
+  -dns-mode string
+               DNS 模式: auto、system、doh 或 dot
   -tm string   测试模式:
                  ori    - 国内三网延迟测试（默认）
                  tgdc   - Telegram 数据中心连通性测试
@@ -208,5 +221,5 @@ rm -rf /usr/bin/pt
 ## 在 Golang 中使用
 
 ```bash
-go get github.com/oneclickvirt/pingtest@v0.0.25
+go get github.com/oneclickvirt/pingtest@v0.0.26
 ```

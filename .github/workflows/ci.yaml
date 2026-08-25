@@ -3,6 +3,9 @@ name: CI
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   test:
     strategy:
@@ -20,8 +23,18 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
+      - name: Verify published basics dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASICS_REF="$(go mod edit -json | python3 -c 'import json, sys; required = {item["Path"]: item["Version"] for item in json.load(sys.stdin).get("Require", [])}; print(required["github.com/oneclickvirt/basics"])')"
+          git ls-remote --exit-code --tags https://github.com/oneclickvirt/basics.git "refs/tags/$BASICS_REF" >/dev/null
+
       - name: Test
-        run: go test ./... -coverprofile=coverage.txt
+        run: |
+          set -euo pipefail
+          go test -race -count=1 ./... -coverprofile=coverage.txt
+          go vet ./...
 
       - name: Create Tag
         if: success() # 仅在测试成功时运行
@@ -33,9 +46,13 @@ jobs:
             echo "Invalid component version: $VERSION" >&2
             exit 1
           fi
-          TAG="${VERSION}-$(date +'%Y%m%d%H%M%S')"
-          git tag $TAG
-          git push origin $TAG
+          TAG="$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Release tag already exists: $TAG" >&2
+            exit 1
+          fi
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
           echo "TAG=$TAG" >> $GITHUB_ENV
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,8 +67,12 @@ jobs:
       - name: Commit and Push README.md
         if: success()
         run: |
+          set -euo pipefail
           git add README.md
+          if git diff --cached --quiet; then
+            exit 0
+          fi
           git commit -m "Update README.md with new tag ${TAG}"
-          git push origin main
+          git push origin HEAD:"${GITHUB_REF_NAME}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

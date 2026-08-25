@@ -14,6 +14,11 @@ import (
 
 func TestRunCLIDefaultKeepsOriginalMode(t *testing.T) {
 	runner, calls := offlineRunner()
+	configured := ""
+	runner.configureDNS = func(_ context.Context, mode string) func() {
+		configured = mode
+		return nil
+	}
 	var output bytes.Buffer
 	if exitCode := runCLI(context.Background(), nil, &output, runner); exitCode != 0 {
 		t.Fatalf("runCLI exit code = %d", exitCode)
@@ -26,6 +31,9 @@ func TestRunCLIDefaultKeepsOriginalMode(t *testing.T) {
 	}
 	if !strings.HasPrefix(output.String(), "项目地址:") {
 		t.Fatalf("default output prefix changed: %q", output.String())
+	}
+	if configured != "auto" {
+		t.Fatalf("default DNS mode = %q, want auto", configured)
 	}
 }
 
@@ -167,6 +175,60 @@ func TestRunCLIRejectsUnknownModeWithoutScheduling(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "tcp") {
 		t.Fatalf("supported mode output does not mention tcp: %q", output.String())
+	}
+}
+
+func TestRunCLIConfiguresAndReleasesDNS(t *testing.T) {
+	var configured string
+	released := false
+	runner := commandRunner{
+		pingWithOptions: func(pt.PingOptions) string { return "ping-result" },
+		configureDNS: func(_ context.Context, mode string) func() {
+			configured = mode
+			return func() { released = true }
+		},
+	}
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-dns-mode", "DOH"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if configured != "doh" || !released {
+		t.Fatalf("DNS lifecycle = mode %q released %t", configured, released)
+	}
+}
+
+func TestRunCLIAcceptsForcedDoT(t *testing.T) {
+	configured := ""
+	runner := commandRunner{
+		pingWithOptions: func(pt.PingOptions) string { return "ping-result" },
+		configureDNS: func(_ context.Context, mode string) func() {
+			configured = mode
+			return nil
+		},
+	}
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-dns-mode", "DOT"}, &output, runner); exitCode != 0 {
+		t.Fatalf("runCLI exit code = %d, output=%q", exitCode, output.String())
+	}
+	if configured != "dot" {
+		t.Fatalf("DNS mode = %q, want dot", configured)
+	}
+}
+
+func TestRunCLIRejectsInvalidDNSModeBeforeConfiguration(t *testing.T) {
+	configured := false
+	runner := commandRunner{
+		configureDNS: func(context.Context, string) func() {
+			configured = true
+			return nil
+		},
+	}
+	var output bytes.Buffer
+	if exitCode := runCLI(context.Background(), []string{"-dns-mode", "invalid"}, &output, runner); exitCode == 0 {
+		t.Fatal("invalid DNS mode returned success")
+	}
+	if configured {
+		t.Fatal("invalid DNS mode configured the resolver")
 	}
 }
 
