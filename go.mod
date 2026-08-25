@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/imroc/req/v3 v3.59.0
 	github.com/mattn/go-runewidth v0.0.15
-	github.com/oneclickvirt/basics v0.0.29
+	github.com/oneclickvirt/basics v0.0.30
 	github.com/oneclickvirt/defaultset v0.0.2-20240624082446
 	github.com/prometheus-community/pro-bing v0.4.1
 	golang.org/x/sys v0.47.0
