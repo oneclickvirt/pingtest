@@ -23,6 +23,8 @@ github.com/oneclickvirt/basics v0.0.29 h1:XGPn7TSPfATcG1Q2uFwNv43HnGE5GpilWa7FYO
 github.com/oneclickvirt/basics v0.0.29/go.mod h1:AqnE9cDa4ThZRvTq7UlUmLYSZBY6CPBzbUhxGT3JWyU=
 github.com/oneclickvirt/basics v0.0.30 h1:RoDFhGKFkOOk2Zs3Dfh8qri+ASubFV2vE1ZJKOAyde4=
 github.com/oneclickvirt/basics v0.0.30/go.mod h1:AqnE9cDa4ThZRvTq7UlUmLYSZBY6CPBzbUhxGT3JWyU=
+github.com/oneclickvirt/basics v0.0.31 h1:wh0WIJCAQBKabWVw+rHJYhruYEj3mxbAHzDI68HEqWE=
+github.com/oneclickvirt/basics v0.0.31/go.mod h1:AqnE9cDa4ThZRvTq7UlUmLYSZBY6CPBzbUhxGT3JWyU=
 github.com/oneclickvirt/defaultset v0.0.2-20240624082446 h1:5Pg3mK/u/vQvSz7anu0nxzrNdELi/AcDAU1mMsmPzyc=
 github.com/oneclickvirt/defaultset v0.0.2-20240624082446/go.mod h1:e9Jt4tf2sbemCtc84/XgKcHy9EZ2jkc5x2sW1NiJS+E=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

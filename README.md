@@ -221,5 +221,5 @@ rm -rf /usr/bin/pt
 ## 在 Golang 中使用
 
 ```bash
-go get github.com/oneclickvirt/pingtest@v0.0.27
+go get github.com/oneclickvirt/pingtest@v0.0.28
 ```
