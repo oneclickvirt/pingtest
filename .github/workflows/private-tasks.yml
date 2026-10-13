@@ -1,0 +1,53 @@
+name: Private ICMPTargetSpiders tasks
+'on':
+  schedule:
+  - cron: 0 0 * * *
+  - cron: 0 6 * * *
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Private operation
+        type: choice
+        options:
+        - ci
+        - analyze
+        - publish-nodes
+        default: ci
+      release_tag:
+        description: Existing private semantic version tag for release
+        type: string
+        required: false
+  repository_dispatch:
+    types:
+    - private-source-updated
+permissions:
+  contents: write
+concurrency:
+  group: private-ICMPTargetSpiders
+  cancel-in-progress: false
+jobs:
+  private:
+    if: github.repository_owner == 'oneclickvirt' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      PRIVATE_CI_TOKEN: ${{ secrets.PRIVATE_CI_TOKEN }}
+      CI_JOB_KEY: ${{ github.job }}
+      GITHUB_TOKEN: ${{ github.token }}
+      CI_TASK: ${{ github.event.schedule == '0 0 * * *' && 'analyze' || github.event.schedule == '0 6 * * *' && 'publish-nodes'
+        || inputs.task || 'ci' }}
+      CI_RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    - name: Run private operation
+      run: python3 .github/scripts/private_tasks.py --repository ICMPTargetSpiders --task "$CI_TASK" --release-tag "$CI_RELEASE_TAG"
+    - name: Save private diagnostics
+      if: always()
+      env:
+        CI_JOB_STATUS: ${{ job.status }}
+      run: python3 .github/scripts/private_guard.py archive --repositories ICMPTargetSpiders --status "$CI_JOB_STATUS"
+    - name: Clean private workspace
+      if: always()
+      run: python3 .github/scripts/private_guard.py clean
