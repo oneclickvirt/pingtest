@@ -34,15 +34,16 @@ jobs:
       PRIVATE_CI_TOKEN: ${{ secrets.PRIVATE_CI_TOKEN }}
       CI_JOB_KEY: ${{ github.job }}
       GITHUB_TOKEN: ${{ github.token }}
-      CI_TASK: ${{ github.event.schedule == '0 0 * * *' && 'analyze' || github.event.schedule == '0 6 * * *' && 'publish-nodes'
-        || inputs.task || 'ci' }}
+      CI_TASK: ${{ github.event.schedule == '0 0 * * *' && 'analyze' || github.event.schedule == '0 6 * * *' &&
+        'publish-nodes' || inputs.task || 'ci' }}
       CI_RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         persist-credentials: false
     - name: Run private operation
-      run: python3 .github/scripts/private_tasks.py --repository ICMPTargetSpiders --task "$CI_TASK" --release-tag "$CI_RELEASE_TAG"
+      run: python3 .github/scripts/private_tasks.py --repository ICMPTargetSpiders --task "$CI_TASK" --release-tag
+        "$CI_RELEASE_TAG"
     - name: Save private diagnostics
       if: always()
       env:
@@ -51,3 +52,5 @@ jobs:
     - name: Clean private workspace
       if: always()
       run: python3 .github/scripts/private_guard.py clean
+env:
+  PYTHONUTF8: '1'
