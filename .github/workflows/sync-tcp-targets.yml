@@ -1,79 +1,77 @@
 name: Sync TCP target registry
-
-on:
-  schedule:
-    - cron: "17 3 * * *"
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/sync-tcp-targets.yml"
-      - "cmd/update-tcp-targets/**"
-      - "model/snapshot/**"
-      - "model/model.go"
-      - "model/tcp_targets.go"
-      - "model/tcp_registry_test.go"
-      - "pt/icmp_structured.go"
-      - "pt/icmp_structured_test.go"
-      - "pt/tcp.go"
-      - "pt/tcp_test.go"
-      - "go.mod"
-      - "go.sum"
-
 permissions:
   contents: write
-
 concurrency:
   group: pingtest-tcp-target-sync
   cancel-in-progress: false
-
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: Update embedded TCP targets
-        shell: bash
-        run: |
-          set -euo pipefail
-          go run ./cmd/update-tcp-targets -output model/snapshot/tcp-targets.json -manifest model/snapshot/manifest.json
-      - name: Test snapshot
-        shell: bash
-        run: |
-          set -euo pipefail
-          test_log="$(mktemp)"
-          trap 'rm -f "$test_log"' EXIT
-          if ! go test -race -count=1 ./... 2>&1 | tee "$test_log"; then
-            message="$(tail -n 120 "$test_log")"
-            message="${message//'%'/'%25'}"
-            message="${message//$'\r'/'%0D'}"
-            message="${message//$'\n'/'%0A'}"
-            echo "::error title=Go race tests failed::${message}"
-            exit 1
-          fi
-      - name: Vet snapshot
-        shell: bash
-        run: |
-          set -euo pipefail
-          go vet ./...
-      - name: Check snapshot diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          git diff --check
-      - name: Commit semantic changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "$(git status --porcelain -- model/snapshot/tcp-targets.json model/snapshot/manifest.json)" ]]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add model/snapshot/tcp-targets.json model/snapshot/manifest.json
-          git commit -m "chore: sync TCP target registry"
-          git push
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+    - name: Update embedded TCP targets
+      shell: bash
+      run: |
+        set -euo pipefail
+        go run ./cmd/update-tcp-targets -output model/snapshot/tcp-targets.json -manifest model/snapshot/manifest.json
+    - name: Test snapshot
+      shell: bash
+      run: |
+        set -euo pipefail
+        test_log="$(mktemp)"
+        trap 'rm -f "$test_log"' EXIT
+        if ! go test -race -count=1 ./... 2>&1 | tee "$test_log"; then
+          message="$(tail -n 120 "$test_log")"
+          message="${message//'%'/'%25'}"
+          message="${message//$'\r'/'%0D'}"
+          message="${message//$'\n'/'%0A'}"
+          echo "::error title=Go race tests failed::${message}"
+          exit 1
+        fi
+    - name: Vet snapshot
+      shell: bash
+      run: |
+        set -euo pipefail
+        go vet ./...
+    - name: Check snapshot diff
+      shell: bash
+      run: |
+        set -euo pipefail
+        git diff --check
+    - name: Commit semantic changes
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -z "$(git status --porcelain -- model/snapshot/tcp-targets.json model/snapshot/manifest.json)" ]]; then
+          exit 0
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add model/snapshot/tcp-targets.json model/snapshot/manifest.json
+        git commit -m "chore: sync TCP target registry"
+        git push
+    env:
+      GOPROXY: https://proxy.golang.org|direct
+'on':
+  schedule:
+  - cron: 17 3 * * *
+  workflow_dispatch: null
+  push:
+    branches:
+    - main
+    paths:
+    - .github/workflows/sync-tcp-targets.yml
+    - cmd/update-tcp-targets/**
+    - model/snapshot/**
+    - model/model.go
+    - model/tcp_targets.go
+    - model/tcp_registry_test.go
+    - pt/icmp_structured.go
+    - pt/icmp_structured_test.go
+    - pt/tcp.go
+    - pt/tcp_test.go
+    - go.mod
+    - go.sum
