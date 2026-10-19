@@ -3,6 +3,7 @@ permissions:
   contents: write
 jobs:
   test:
+    timeout-minutes: 30
     strategy:
       matrix:
         go:
@@ -30,7 +31,7 @@ jobs:
         go test -race -count=1 ./... -coverprofile=coverage.txt
         go vet ./...
     - name: Create Tag
-      if: success()
+      if: ${{ success() && !inputs.test_only }}
       run: |
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
@@ -50,13 +51,13 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Update README.md
-      if: success()
+      if: ${{ success() && !inputs.test_only }}
       run: |
         sed -i "s|go get github.com/oneclickvirt/pingtest@.*|go get github.com/oneclickvirt/pingtest@${TAG}|" README.md
       env:
         TAG: ${{ env.TAG }}
     - name: Commit and Push README.md
-      if: success()
+      if: ${{ success() && !inputs.test_only }}
       run: |
         set -euo pipefail
         git add README.md
@@ -70,4 +71,9 @@ jobs:
     env:
       GOPROXY: https://proxy.golang.org|direct
 'on':
-  workflow_dispatch: null
+  workflow_dispatch:
+    inputs:
+      test_only:
+        description: Run tests without creating tags, editing README or publishing binaries
+        type: boolean
+        default: false
