@@ -106,7 +106,7 @@
   },
   {
     "name": "DeepSeek",
-    "host": "huggingface.co",
+    "host": "chat.deepseek.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -197,7 +197,7 @@
   },
   {
     "name": "Grok",
-    "host": "chat.deepseek.com",
+    "host": "grok.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -211,7 +211,7 @@
   },
   {
     "name": "HuggingFace",
-    "host": "poe.com",
+    "host": "huggingface.co",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -226,6 +226,13 @@
   {
     "name": "KhanAcademy",
     "host": "www.khanacademy.org",
+    "port": 443,
+    "category": "global",
+    "source": "tcpbench"
+  },
+  {
+    "name": "Line",
+    "host": "line.me",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -323,7 +330,7 @@
   },
   {
     "name": "Poe",
-    "host": "signal.org",
+    "host": "poe.com",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -358,7 +365,7 @@
   },
   {
     "name": "Signal",
-    "host": "line.me",
+    "host": "signal.org",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
@@ -435,7 +442,7 @@
   },
   {
     "name": "Twitch",
-    "host": "grok.com",
+    "host": "www.twitch.tv",
     "port": 443,
     "category": "global",
     "source": "tcpbench"
