@@ -1,0 +1,45 @@
+{
+  "repository": "oneclickvirt/pingtest",
+  "branch": "main",
+  "skill_name": "oneclickvirt-pingtest",
+  "purpose": "Measure TCP handshake latency for a user-selected endpoint; do not describe it as ICMP latency.",
+  "notes": [
+    "Read probe_help from the installed binary before assuming flags are supported. MCP returns native JSON when the program provides JSON, otherwise native text.",
+    "Keep partial/network errors distinct from confirmed test outcomes. Current release assets and their actual architecture are available through release_assets.",
+    "The tcp preset requires target, such as example.com:443. Test only the user-selected endpoint."
+  ],
+  "guide": "https://www.spiritlhl.net/guide/agent_integrations.html",
+  "releases": true,
+  "mcp": true,
+  "binary": "pt",
+  "asset_prefix": "pingtest",
+  "presets": {
+    "tcp": {
+      "args": [
+        "-tm",
+        "tcp",
+        "-json",
+        "-attempts",
+        "1",
+        "-timeout",
+        "2s",
+        "-concurrency",
+        "1"
+      ],
+      "target": "-target",
+      "timeout": 10
+    }
+  },
+  "benchmark": false,
+  "source_files": [
+    "cmd/main.go",
+    "go.mod",
+    "pt_install.sh"
+  ],
+  "purpose_zh": "测量指定地址的 TCP 握手延迟，不将其当作 ICMP 延迟。",
+  "notes_zh": [
+    "先用 probe_help 核对已安装程序的实际帮助。程序支持 JSON 时返回原生 JSON，否则返回原生文本。",
+    "区分部分结果、网络失败和确定结论；通过 release_assets 查询当前真实产物及架构。",
+    "tcp 预设必须填写 target，例如 example.com:443；只探测用户指定的目标。"
+  ]
+}
